@@ -1556,14 +1556,30 @@ function parseWorkbook(workbook) {
     function parseDurationTime(cell) {
         if (!cell) return null;
         const str = String(cell).trim();
-        const match = str.match(/(\d+):(\d{2}):(\d{2})/);
-        if (!match) return null;
-        const h = parseInt(match[1]);
-        const m = parseInt(match[2]);
-        const totalMins = h * 60 + m;
-        return totalMins === 0 ? null : 
-               totalMins < 60 ? `${totalMins}m` : 
-               `${Math.floor(totalMins/60)}h ${totalMins%60}m`;
+        
+        // Intentar formato HH:MM:SS primero
+        let match = str.match(/(\d+):(\d{2}):(\d{2})/);
+        if (match) {
+            const h = parseInt(match[1]);
+            const m = parseInt(match[2]);
+            const totalMins = h * 60 + m;
+            return totalMins === 0 ? null : 
+                   totalMins < 60 ? `${totalMins}m` : 
+                   `${Math.floor(totalMins/60)}h ${totalMins%60}m`;
+        }
+        
+        // Si falla, intentar formato H:MM o HH:MM
+        match = str.match(/(\d+):(\d+)/);
+        if (match) {
+            const h = parseInt(match[1]);
+            const m = parseInt(match[2]);
+            const totalMins = h * 60 + m;
+            return totalMins === 0 ? null : 
+                   totalMins < 60 ? `${totalMins}m` : 
+                   `${Math.floor(totalMins/60)}h ${totalMins%60}m`;
+        }
+        
+        return null;
     }
 
     function cleanPrice(str) {
