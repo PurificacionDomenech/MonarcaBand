@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MonarcaBand - Análisis de Estrategia</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border: 1px solid #d0d0d0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: #2c5282;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .header-info {
+            text-align: right;
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        .view-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: #e8f4f8;
+            padding: 15px 20px;
+            border-bottom: 2px solid #4a90e2;
+        }
+        .view-controls label {
+            font-weight: 600;
+            color: #2c5282;
+            margin-right: 5px;
+        }
+        select, input, button {
+            padding: 8px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        select {
+            background: white;
+            min-width: 150px;
+        }
+        button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover {
+            background: #357abd;
+        }
+        .btn-secondary {
+            background: #718096;
+        }
+        .btn-secondary:hover {
+            background: #4a5568;
+        }
+        .btn-danger {
+            background: #e53e3e;
+        }
+        .btn-danger:hover {
+            background: #c53030;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #d0d0d0;
+            background: #f8f9fa;
+        }
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: #4a5568;
+            font-weight: 500;
+        }
+        .tab.active {
+            background: white;
+            color: #2c5282;
+            border-bottom: 3px solid #2c5282;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .grid {
+            display: grid;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .grid-2 {
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        }
+        .grid-4 {
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
+        .card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 20px;
+        }
+        .card h3 {
+            color: #2d3748;
+            font-size: 16px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .stat-box {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            text-align: center;
+            border-radius: 3px;
+        }
+        .stat-box h4 {
+            font-size: 12px;
+            color: #718096;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .stat-box p {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+        .positive {
+            color: #38a169 !important;
+        }
+        .negative {
+            color: #e53e3e !important;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 13px;
+            color: #4a5568;
+        }
+        input, select, textarea {
+            width: 100%;
+            background: white;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+            padding: 8px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 3px;
+            font-family: inherit;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        th {
+            background: #f7fafc;
+            color: #4a5568;
+            font-weight: 600;
+            text-align: left;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+        td {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+        tr:hover {
+            background: #f7fafc;
+        }
+        .progress-container {
+            width: 100%;
+            height: 24px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            position: relative;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #38a169;
+            transition: width 0.3s;
+        }
+        .progress-bar.warning {
+            background: #ed8936;
+        }
+        .progress-bar.danger {
+            background: #e53e3e;
+        }
+        .progress-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: 600;
+            font-size: 12px;
+            color: #2d3748;
+        }
+        .chart-container {
+            height: 300px;
+            margin-top: 15px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 4px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-content h2 {
+            margin-bottom: 20px;
+            color: #2c5282;
+        }
+        .close-modal {
+            float: right;
+            font-size: 24px;
+            cursor: pointer;
+            color: #718096;
+        }
+        .close-modal:hover {
+            color: #2d3748;
+        }
+        .filter-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+        }
+        .info-banner {
+            background: #e8f4f8;
+            border-left: 4px solid #4a90e2;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .stars {
+            display: inline-flex;
+            gap: 5px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .star {
+            color: #d0d0d0;
+        }
+        .star.selected {
+            color: #fbbf24;
+        }
+        .obs-tooltip {
+            position: relative;
+            cursor: help;
+            color: #4a90e2;
+            font-weight: 600;
+        }
+        .obs-tooltip:hover::after {
+            content: attr(data-obs);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2d3748;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-width: 300px;
+            z-index: 10;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            word-wrap: break-word;
+        }
+        .obs-tooltip:hover::before {
+            content: "";
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #2d3748;
+        }
+        @media (max-width: 768px) {
+            .grid-2, .grid-4 {
+                grid-template-columns: 1fr;
+            }
+            .view-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>MonarcaBand</h1>
+                <div class="header-info">Sistema de Análisis de Trading</div>
+            </div>
+            <button onclick="openSettingsModal()" class="btn-secondary">Configuración</button>
+        </div>
+        <div class="view-controls">
+            <label for="view-selector">Vista:</label>
+            <select id="view-selector" onchange="changeView()">
+                <option value="global">Global (Todos los meses)</option>
+            </select>
+            <label for="operator-selector" style="margin-left: 20px;">Operador:</label>
+            <select id="operator-selector" onchange="setActiveOperator(this.value)"></select>
+            <button onclick="openCreateOperatorModal()" class="btn-secondary">+ Nuevo</button>
+            <button onclick="confirmDeleteOperator()" class="btn-danger">Eliminar</button>
+        </div>
+        <div class="tabs">
+            <button class="tab active" onclick="openTab('dashboard')">Dashboard</button>
+            <button class="tab" onclick="openTab('registro')">Registro</button>
+            <button class="tab" onclick="openTab('historial')">Historial</button>
+            <button class="tab" onclick="openTab('estadisticas')">Estadísticas</button>
+            <button class="tab" onclick="openTab('importar')">Importar</button>
+        </div>
+
+        <!-- DASHBOARD -->
+        <div id="dashboard" class="tab-content active">
+            <div class="info-banner" id="view-info">
+                Vista Global: Mostrando resultados de todos los meses combinados
+            </div>
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3>Resumen de Cuenta</h3>
+                    <div class="grid grid-4">
+                        <div class="stat-box">
+                            <h4>Saldo Inicial</h4>
+                            <p id="initial-balance-display">0.00 €</p>
+                        </div>
+                        <div class="stat-box">
+                            <h4>Saldo Actual</h4>
+                            <p id="current-balance">0.00 €</p>
+                        </div>
+                        <div class="stat-box">
+                            <h4>P/L Total</h4>
+                            <p id="profit-loss">0.00 €</p>
+                        </div>
+                        <div class="stat-box">
+                            <h4>Rentabilidad</h4>
+                            <p id="roi">0.00%</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Seguimiento de Drawdown</h3>
+                    <div class="grid grid-4">
+                        <div class="stat-box">
+                            <h4>HWM</h4>
+                            <p id="high-water-mark">0.00 €</p>
+                        </div>
+                        <div class="stat-box">
+                            <h4>Suelo DD</h4>
+                            <p id="drawdown-floor">0.00 €</p>
+                        </div>
+                        <div class="stat-box">
+                            <h4>Margen</h4>
+                            <p id="margin-to-floor">0.00 €</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Regla de Consistencia</h3>
+                <p style="margin-bottom: 10px; color: #718096;">El día más rentable no debe superar el <strong id="consistency-limit-display">40</strong>% de las ganancias totales.</p>
+                <div class="progress-container">
+                    <div id="consistency-progress" class="progress-bar" style="width: 0%"></div>
+                    <div class="progress-label">0%</div>
+                </div>
+                <p id="consistency-details" style="margin-top: 10px; font-size: 13px; color: #718096;">No hay datos disponibles</p>
+            </div>
+            <div class="card">
+                <h3>Crecimiento de Capital</h3>
+                <div class="chart-container">
+                    <canvas id="capitalGrowthChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- REGISTRO -->
+        <div id="registro" class="tab-content">
+            <div class="card">
+                <h3>Nueva Operación</h3>
+                <div class="info-banner">
+                    <strong>Campos obligatorios:</strong> Solo Fecha y Resultado. Los demás campos son opcionales.
+                </div>
+                <form id="trading-form">
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label for="date">Fecha: *</label>
+                            <input type="date" id="date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="month">Mes de Playback:</label>
+                            <select id="month">
+                                <option value="">Seleccionar mes...</option>
+                                <option value="2024-01">Enero 2024</option>
+                                <option value="2024-02">Febrero 2024</option>
+                                <option value="2024-03">Marzo 2024</option>
+                                <option value="2024-04">Abril 2024</option>
+                                <option value="2024-05">Mayo 2024</option>
+                                <option value="2024-06">Junio 2024</option>
+                                <option value="2024-07">Julio 2024</option>
+                                <option value="2024-08">Agosto 2024</option>
+                                <option value="2024-09">Septiembre 2024</option>
+                                <option value="2024-10">Octubre 2024</option>
+                                <option value="2024-11">Noviembre 2024</option>
+                                <option value="2024-12">Diciembre 2024</option>
+                                <option value="2025-01">Enero 2025</option>
+                                <option value="2025-02">Febrero 2025</option>
+                                <option value="2025-03">Marzo 2025</option>
+                                <option value="2025-04">Abril 2025</option>
+                                <option value="2025-05">Mayo 2025</option>
+                                <option value="2025-06">Junio 2025</option>
+                                <option value="2025-07">Julio 2025</option>
+                                <option value="2025-08">Agosto 2025</option>
+                                <option value="2025-09">Septiembre 2025</option>
+                                <option value="2025-10">Octubre 2025</option>
+                                <option value="2025-11">Noviembre 2025</option>
+                                <option value="2025-12">Diciembre 2025</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="type">Tipo:</label>
+                            <select id="type">
+                                <option value="">Seleccionar...</option>
+                                <option value="bullish">Alcista</option>
+                                <option value="bearish">Bajista</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="activo">Activo:</label>
+                            <select id="activo">
+                                <option value="">Seleccionar...</option>
+                                <option value="NQ (Nasdaq)">NQ (Nasdaq)</option>
+                                <option value="ES (S&P 500)">ES (S&P 500)</option>
+                                <option value="YM (Dow Jones)">YM (Dow Jones)</option>
+                                <option value="RTY (Russell)">RTY (Russell)</option>
+                                <option value="GC (Gold)">GC (Gold)</option>
+                                <option value="CL (Crude Oil)">CL (Crude Oil)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="entry-time">Hora Entrada:</label>
+                            <input type="time" id="entry-time">
+                        </div>
+                        <div class="form-group">
+                            <label for="exit-time">Hora Salida:</label>
+                            <input type="time" id="exit-time">
+                        </div>
+                        <div class="form-group">
+                            <label for="entry-price">Precio Entrada:</label>
+                            <input type="number" id="entry-price" step="0.01" placeholder="Ej: 18500.25">
+                        </div>
+                        <div class="form-group">
+                            <label for="exit-price">Precio Salida:</label>
+                            <input type="number" id="exit-price" step="0.01" placeholder="Ej: 18680.25">
+                        </div>
+                        <div class="form-group">
+                            <label for="exit-type">Tipo de Salida:</label>
+                            <select id="exit-type">
+                                <option value="">Seleccionar...</option>
+                                <option value="target">Target (180 pts)</option>
+                                <option value="stop">Stop Loss (100 pts)</option>
+                                <option value="breakeven">Break Even</option>
+                                <option value="partial">Salida Parcial</option>
+                                <option value="time">Por Tiempo</option>
+                                <option value="manual">Manual</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="amount">Resultado (€): *</label>
+                            <input type="number" id="amount" step="0.01" required placeholder="Positivo: ganancia, Negativo: pérdida">
+                        </div>
+                        <div class="form-group">
+                            <label for="news">Impacto Noticias:</label>
+                            <div class="stars">
+                                <span class="star" data-value="0" onclick="setNewsRating(0)">☆</span>
+                                <span class="star" data-value="1" onclick="setNewsRating(1)">☆</span>
+                                <span class="star" data-value="2" onclick="setNewsRating(2)">☆</span>
+                                <span class="star" data-value="3" onclick="setNewsRating(3)">☆</span>
+                                <span class="star" data-value="4" onclick="setNewsRating(4)">☆</span>
+                            </div>
+                            <input type="hidden" id="news" value="0">
+                            <small style="display: block; margin-top: 5px; color: #718096;">0: Sin impacto | 4: Alto impacto</small>
+                        </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="observations">Observaciones:</label>
+                            <textarea id="observations" placeholder="Análisis de la operación, contexto, decisiones..."></textarea>
+                        </div>
+                    </div>
+                    <button type="submit" style="width: 100%; margin-top: 10px;">Guardar Operación</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- HISTORIAL -->
+        <div id="historial" class="tab-content">
+            <div class="card">
+                <h3>Filtros</h3>
+                <div class="filter-controls">
+                    <div class="form-group">
+                        <label for="filter-month">Mes:</label>
+                        <select id="filter-month" onchange="filterOperations()">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-type">Tipo:</label>
+                        <select id="filter-type" onchange="filterOperations()">
+                            <option value="">Todos</option>
+                            <option value="bullish">Alcista</option>
+                            <option value="bearish">Bajista</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-result">Resultado:</label>
+                        <select id="filter-result" onchange="filterOperations()">
+                            <option value="">Todos</option>
+                            <option value="win">Ganancia</option>
+                            <option value="loss">Pérdida</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-exit">Tipo Salida:</label>
+                        <select id="filter-exit" onchange="filterOperations()">
+                            <option value="">Todos</option>
+                            <option value="target">Target</option>
+                            <option value="stop">Stop Loss</option>
+                            <option value="breakeven">Break Even</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Operaciones</h3>
+                <div style="overflow-x: auto;">
+                    <table id="operations-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Mes PB</th>
+                                <th>Contrato</th>
+                                <th>Tipo</th>
+                                <th>Activo</th>
+                                <th>Precio Ent.</th>
+                                <th>Precio Sal.</th>
+                                <th>Hora Ent.</th>
+                                <th>Hora Sal.</th>
+                                <th>Duración</th>
+                                <th>Puntos</th>
+                                <th>Obs.</th>
+                                <th>Resultado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="operations-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- IMPORTAR -->
+        <div id="importar" class="tab-content">
+            <div class="card">
+                <h3>Importar Operaciones desde Excel</h3>
+                <div class="info-banner">
+                    <strong>Formato esperado:</strong> Archivo Excel (.xlsx) con hojas nombradas como "ENERO 24", "FEBRERO 24", etc.<br>
+                    <strong>Columnas que se leerán:</strong><br>
+                    - Columna A: Fecha<br>
+                    - Columna B: Contrato (MNQ/NQ)<br>
+                    - Columna C: Hora Inicio<br>
+                    - Columna D: Hora Final<br>
+                    - Columna E: Tiempo (duración)<br>
+                    - Columna F: Trade (Largo/Corto)<br>
+                    - Columna G: Entrada (precio)<br>
+                    - Columna H: Salida (precio)<br>
+                    - Columna I: Puntos Con Protección<br>
+                    - <strong>Columna J: Importe (€) - RESULTADO</strong><br>
+                    - <strong>Columna K: Observaciones (opcional)</strong><br><br>
+                    Las operaciones existentes no se borrarán, solo se añadirán las nuevas.
+                </div>
+                <div class="form-group">
+                    <label for="excel-file">Archivo Excel:</label>
+                    <input type="file" id="excel-file" accept=".xlsx" style="padding: 10px; border: 1px solid #ccc; width: 100%;">
+                </div>
+                <button onclick="handleFileUpload()" style="width: 100%; margin-top: 10px;">Importar Operaciones</button>
+                <div id="import-status" style="margin-top: 15px; font-weight: bold;"></div>
+            </div>
+        </div>
+
+        <!-- ESTADÍSTICAS -->
+        <div id="estadisticas" class="tab-content">
+            <div class="card">
+                <h3>Estadísticas Generales</h3>
+                <div id="stats-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL SETTINGS -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeSettingsModal()">&times;</span>
+            <h2>Configuración</h2>
+            <div class="form-group">
+                <label for="initial-balance">Saldo Inicial (€):</label>
+                <input type="number" id="initial-balance" step="0.01" min="0">
+            </div>
+            <div class="form-group">
+                <label for="trailing-drawdown-amount">Importe Drawdown (€):</label>
+                <input type="number" id="trailing-drawdown-amount" step="0.01" min="0">
+            </div>
+            <div class="form-group">
+                <label for="consistency-percentage">% Consistencia:</label>
+                <input type="number" id="consistency-percentage" step="1" min="1" max="100">
+            </div>
+            <button onclick="saveSettings()" style="width: 100%; margin-top: 10px;">Guardar Configuración</button>
+        </div>
+    </div>
+
+    <!-- MODAL EDIT -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeEditModal()">&times;</span>
+            <h2>Editar Operación</h2>
+            <form id="edit-form">
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label for="edit-date">Fecha:</label>
+                        <input type="date" id="edit-date">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-month">Mes Playback:</label>
+                        <select id="edit-month">
+                            <option value="">Ninguno</option>
+                            <option value="2024-01">Enero 2024</option>
+                            <option value="2024-02">Febrero 2024</option>
+                            <option value="2024-03">Marzo 2024</option>
+                            <option value="2024-04">Abril 2024</option>
+                            <option value="2024-05">Mayo 2024</option>
+                            <option value="2024-06">Junio 2024</option>
+                            <option value="2024-07">Julio 2024</option>
+                            <option value="2024-08">Agosto 2024</option>
+                            <option value="2024-09">Septiembre 2024</option>
+                            <option value="2024-10">Octubre 2024</option>
+                            <option value="2024-11">Noviembre 2024</option>
+                            <option value="2024-12">Diciembre 2024</option>
+                            <option value="2025-01">Enero 2025</option>
+                            <option value="2025-02">Febrero 2025</option>
+                            <option value="2025-03">Marzo 2025</option>
+                            <option value="2025-04">Abril 2025</option>
+                            <option value="2025-05">Mayo 2025</option>
+                            <option value="2025-06">Junio 2025</option>
+                            <option value="2025-07">Julio 2025</option>
+                            <option value="2025-08">Agosto 2025</option>
+                            <option value="2025-09">Septiembre 2025</option>
+                            <option value="2025-10">Octubre 2025</option>
+                            <option value="2025-11">Noviembre 2025</option>
+                            <option value="2025-12">Diciembre 2025</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-type">Tipo:</label>
+                        <select id="edit-type">
+                            <option value="">Seleccionar...</option>
+                            <option value="bullish">Alcista</option>
+                            <option value="bearish">Bajista</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-activo">Activo:</label>
+                        <select id="edit-activo">
+                            <option value="">Ninguno</option>
+                            <option value="NQ (Nasdaq)">NQ (Nasdaq)</option>
+                            <option value="ES (S&P 500)">ES (S&P 500)</option>
+                            <option value="YM (Dow Jones)">YM (Dow Jones)</option>
+                            <option value="RTY (Russell)">RTY (Russell)</option>
+                            <option value="GC (Gold)">GC (Gold)</option>
+                            <option value="CL (Crude Oil)">CL (Crude Oil)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-entry-time">Hora Entrada:</label>
+                        <input type="time" id="edit-entry-time">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-exit-time">Hora Salida:</label>
+                        <input type="time" id="edit-exit-time">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-entry-price">Precio Entrada:</label>
+                        <input type="number" id="edit-entry-price" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-exit-price">Precio Salida:</label>
+                        <input type="number" id="edit-exit-price" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-exit-type">Tipo Salida:</label>
+                        <select id="edit-exit-type">
+                            <option value="">Seleccionar...</option>
+                            <option value="target">Target (180 pts)</option>
+                            <option value="stop">Stop Loss (100 pts)</option>
+                            <option value="breakeven">Break Even</option>
+                            <option value="partial">Salida Parcial</option>
+                            <option value="time">Por Tiempo</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-amount">Resultado (€):</label>
+                        <input type="number" id="edit-amount" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-news">Impacto Noticias:</label>
+                        <div class="stars" id="edit-stars">
+                            <span class="star" data-value="0" onclick="setEditNewsRating(0)">☆</span>
+                            <span class="star" data-value="1" onclick="setEditNewsRating(1)">☆</span>
+                            <span class="star" data-value="2" onclick="setEditNewsRating(2)">☆</span>
+                            <span class="star" data-value="3" onclick="setEditNewsRating(3)">☆</span>
+                            <span class="star" data-value="4" onclick="setEditNewsRating(4)">☆</span>
+                        </div>
+                        <input type="hidden" id="edit-news" value="0">
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label for="edit-observations">Observaciones:</label>
+                        <textarea id="edit-observations"></textarea>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button type="button" onclick="saveOperationChanges()" style="flex: 1;">Guardar Cambios</button>
+                    <button type="button" onclick="closeEditModal()" class="btn-secondary" style="flex: 1;">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // === STATE ===
+        const OPERATORS_KEY = 'monarcaBandOperators';
+        const ACTIVE_OPERATOR_KEY = 'monarcaBandActiveOperator';
+        const CURRENT_VIEW_KEY = 'monarcaBandCurrentView';
+        let operators = [];
+        let currentOperatorId = null;
+        let currentView = 'global';
+        let operations = [];
+        let settings = { initialBalance: 50000, consistencyPercentage: 40, trailingDrawdownAmount: 2500 };
+        let highWaterMark = 0;
+        let drawdownFloor = 0;
+        let editingOperationId = null;
+
+        // === HELPERS ===
+        function formatCurrency(value) {
+            return (typeof value === 'number' ? value.toFixed(2) : '0.00') + ' €';
+        }
+        function formatPercentage(value) {
+            return (typeof value === 'number' ? value.toFixed(2) : '0.00') + '%';
+        }
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            return new Date(dateString + 'T00:00:00').toLocaleDateString('es-ES');
+        }
+        function formatMonth(monthString) {
+            if (!monthString) return 'N/A';
+            const months = {
+                '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr',
+                '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+                '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
+            };
+            const [year, month] = monthString.split('-');
+            return `${months[month]} ${year}`;
+        }
+        function calculateDuration(entryTime, exitTime) {
+            if (!entryTime || !exitTime) return 'N/A';
+            try {
+                const [eH, eM] = entryTime.split(':').map(Number);
+                const [xH, xM] = exitTime.split(':').map(Number);
+                let mins = (xH * 60 + xM) - (eH * 60 + eM);
+                if (mins < 0) mins += 24 * 60;
+                const h = Math.floor(mins / 60);
+                const m = mins % 60;
+                return `${h}h ${m}m`;
+            } catch (e) {
+                return 'N/A';
+            }
+        }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // === OPERATORS ===
+        function loadOperators() {
+            const stored = localStorage.getItem(OPERATORS_KEY);
+            operators = stored ? JSON.parse(stored) : [];
+        }
+        function saveOperators() {
+            localStorage.setItem(OPERATORS_KEY, JSON.stringify(operators));
+        }
+        function populateOperatorSelector() {
+            const sel = document.getElementById('operator-selector');
+            sel.innerHTML = '';
+            operators.forEach(op => {
+                const opt = document.createElement('option');
+                opt.value = op.id;
+                opt.textContent = op.name;
+                sel.appendChild(opt);
+            });
+            if (currentOperatorId) sel.value = currentOperatorId;
+        }
+        function setActiveOperator(id) {
+            currentOperatorId = id;
+            localStorage.setItem(ACTIVE_OPERATOR_KEY, currentOperatorId);
+            const storedSettings = localStorage.getItem(`monarcaBandSettings_${id}`);
+            settings = storedSettings ? JSON.parse(storedSettings) : { initialBalance: 50000, consistencyPercentage: 40, trailingDrawdownAmount: 2500 };
+            loadAllOperations();
+            populateOperatorSelector();
+            populateViewSelector();
+            updateUI();
+        }
+        function openCreateOperatorModal() {
+            const name = prompt('Nombre del operador:');
+            if (!name) return;
+            const id = Date.now().toString();
+            operators.push({ id, name });
+            saveOperators();
+            setActiveOperator(id);
+            openSettingsModal();
+        }
+        function confirmDeleteOperator() {
+            if (!currentOperatorId || operators.length === 1) {
+                alert('No puedes eliminar el único operador.');
+                return;
+            }
+            const op = operators.find(o => o.id === currentOperatorId);
+            if (confirm(`¿Eliminar operador "${op.name}" y todas sus operaciones?`)) {
+                const allKeys = Object.keys(localStorage);
+                allKeys.forEach(key => {
+                    if (key.startsWith(`monarcaBandOperations_${currentOperatorId}_`)) {
+                        localStorage.removeItem(key);
+                    }
+                });
+                localStorage.removeItem(`monarcaBandSettings_${currentOperatorId}`);
+                operators = operators.filter(o => o.id !== currentOperatorId);
+                saveOperators();
+                setActiveOperator(operators[0].id);
+            }
+        }
+        function saveData() {
+            if (!currentOperatorId) return;
+            localStorage.setItem(`monarcaBandSettings_${currentOperatorId}`, JSON.stringify(settings));
+            const opsByMonth = {};
+            operations.forEach(op => {
+                const monthKey = op.month || 'sin-mes';
+                if (!opsByMonth[monthKey]) opsByMonth[monthKey] = [];
+                opsByMonth[monthKey].push(op);
+            });
+            Object.keys(opsByMonth).forEach(month => {
+                localStorage.setItem(`monarcaBandOperations_${currentOperatorId}_${month}`, JSON.stringify(opsByMonth[month]));
+            });
+        }
+        function loadAllOperations() {
+            operations = [];
+            const allKeys = Object.keys(localStorage);
+            allKeys.forEach(key => {
+                if (key.startsWith(`monarcaBandOperations_${currentOperatorId}_`)) {
+                    const monthOps = JSON.parse(localStorage.getItem(key));
+                    operations = operations.concat(monthOps);
+                }
+            });
+            operations.sort((a, b) => new Date(a.date) - new Date(b.date));
+            calculateHwmAndDrawdownFloor(true);
+        }
+        function getFilteredOperations() {
+            if (currentView === 'global') return operations;
+            return operations.filter(op => op.month === currentView);
+        }
+
+        // === VIEW MANAGEMENT ===
+        function populateViewSelector() {
+            const sel = document.getElementById('view-selector');
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="global">Global (Todos los meses)</option>';
+            const months = new Set(operations.map(op => op.month).filter(m => m));
+            const sortedMonths = Array.from(months).sort((a, b) => b.localeCompare(a));
+            sortedMonths.forEach(month => {
+                const opt = document.createElement('option');
+                opt.value = month;
+                opt.textContent = ` ${formatMonth(month)}`;
+                sel.appendChild(opt);
+            });
+            sel.value = currentVal;
+        }
+        function changeView() {
+            currentView = document.getElementById('view-selector').value;
+            localStorage.setItem(CURRENT_VIEW_KEY, currentView);
+            updateViewInfo();
+            updateUI();
+        }
+        function updateViewInfo() {
+            const info = document.getElementById('view-info');
+            if (currentView === 'global') {
+                info.textContent = 'Vista Global: Mostrando resultados de todos los meses combinados';
+            } else {
+                info.textContent = `Vista Mensual: Mostrando resultados de ${formatMonth(currentView)}`;
+            }
+        }
+
+        // === TABS ===
+        function openTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            document.querySelector(`.tab[onclick="openTab('${tabName}')"]`).classList.add('active');
+            if (tabName === 'historial') {
+                populateMonthFilter();
+                renderOperations();
+            } else if (tabName === 'estadisticas') {
+                updateStatistics();
+            } else if (tabName === 'dashboard') {
+                updateDashboard();
+            }
+        }
+
+        // === MODALS ===
+        function openSettingsModal() {
+            document.getElementById('initial-balance').value = settings.initialBalance;
+            document.getElementById('consistency-percentage').value = settings.consistencyPercentage;
+            document.getElementById('trailing-drawdown-amount').value = settings.trailingDrawdownAmount;
+            document.getElementById('settings-modal').style.display = 'flex';
+        }
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').style.display = 'none';
+        }
+        function saveSettings() {
+            const ib = parseFloat(document.getElementById('initial-balance').value);
+            const cp = parseInt(document.getElementById('consistency-percentage').value);
+            const tda = parseFloat(document.getElementById('trailing-drawdown-amount').value);
+            if (isNaN(ib) || ib < 0 || isNaN(cp) || cp < 1 || cp > 100 || isNaN(tda) || tda <= 0) {
+                alert('Valores inválidos');
+                return;
+            }
+            settings = { initialBalance: ib, consistencyPercentage: cp, trailingDrawdownAmount: tda };
+            calculateHwmAndDrawdownFloor(true);
+            saveData();
+            closeSettingsModal();
+            updateUI();
+        }
+
+        // === NEWS RATING ===
+        function setNewsRating(value) {
+            const stars = document.querySelectorAll('#registro .star');
+            stars.forEach(star => {
+                star.classList.remove('selected');
+                if (parseInt(star.dataset.value) <= value) {
+                    star.classList.add('selected');
+                }
+            });
+            document.getElementById('news').value = value;
+        }
+        function setEditNewsRating(value) {
+            const stars = document.querySelectorAll('#edit-stars .star');
+            stars.forEach(star => {
+                star.classList.remove('selected');
+                if (parseInt(star.dataset.value) <= value) {
+                    star.classList.add('selected');
+                }
+            });
+            document.getElementById('edit-news').value = value;
+        }
+
+        // === OPERATIONS ===
+        document.getElementById('trading-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const date = document.getElementById('date').value;
+            const month = document.getElementById('month').value;
+            const type = document.getElementById('type').value;
+            const activo = document.getElementById('activo').value;
+            const entryTime = document.getElementById('entry-time').value || null;
+            const exitTime = document.getElementById('exit-time').value || null;
+            const entryPrice = parseFloat(document.getElementById('entry-price').value) || null;
+            const exitPrice = parseFloat(document.getElementById('exit-price').value) || null;
+            const exitType = document.getElementById('exit-type').value || null;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const news = parseInt(document.getElementById('news').value);
+            const observations = document.getElementById('observations').value.trim() || null;
+            if (!date || isNaN(amount)) {
+                alert('Por favor completa al menos la fecha y el resultado');
+                return;
+            }
+            operations.push({
+                id: Date.now(),
+                date,
+                month: month || null,
+                type: type || null,
+                activo: activo || null,
+                entryTime,
+                exitTime,
+                entryPrice,
+                exitPrice,
+                exitType,
+                duration: calculateDuration(entryTime, exitTime),
+                amount,
+                news,
+                observations,
+                contract: null,
+                points: null
+            });
+            operations.sort((a, b) => new Date(a.date) - new Date(b.date));
+            calculateHwmAndDrawdownFloor();
+            saveData();
+            document.getElementById('trading-form').reset();
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+            setNewsRating(0);
+            populateViewSelector();
+            updateUI();
+            alert('Operación guardada');
+        });
+
+        function editOperation(id) {
+            const op = operations.find(o => o.id === id);
+            if (!op) return;
+            editingOperationId = id;
+            document.getElementById('edit-date').value = op.date;
+            document.getElementById('edit-month').value = op.month || '';
+            document.getElementById('edit-type').value = op.type || '';
+            document.getElementById('edit-activo').value = op.activo || '';
+            document.getElementById('edit-entry-time').value = op.entryTime || '';
+            document.getElementById('edit-exit-time').value = op.exitTime || '';
+            document.getElementById('edit-entry-price').value = op.entryPrice || '';
+            document.getElementById('edit-exit-price').value = op.exitPrice || '';
+            document.getElementById('edit-exit-type').value = op.exitType || '';
+            document.getElementById('edit-amount').value = op.amount;
+            setEditNewsRating(op.news || 0);
+            document.getElementById('edit-observations').value = op.observations || '';
+            document.getElementById('edit-modal').style.display = 'flex';
+        }
+        function closeEditModal() {
+            document.getElementById('edit-modal').style.display = 'none';
+            editingOperationId = null;
+        }
+        function saveOperationChanges() {
+            const op = operations.find(o => o.id === editingOperationId);
+            if (!op) return;
+            op.date = document.getElementById('edit-date').value;
+            op.month = document.getElementById('edit-month').value || null;
+            op.type = document.getElementById('edit-type').value || null;
+            op.activo = document.getElementById('edit-activo').value || null;
+            op.entryTime = document.getElementById('edit-entry-time').value || null;
+            op.exitTime = document.getElementById('edit-exit-time').value || null;
+            op.entryPrice = parseFloat(document.getElementById('edit-entry-price').value) || null;
+            op.exitPrice = parseFloat(document.getElementById('edit-exit-price').value) || null;
+            op.exitType = document.getElementById('edit-exit-type').value || null;
+            op.duration = calculateDuration(op.entryTime, op.exitTime);
+            op.amount = parseFloat(document.getElementById('edit-amount').value);
+            op.news = parseInt(document.getElementById('edit-news').value);
+            op.observations = document.getElementById('edit-observations').value.trim() || null;
+            operations.sort((a, b) => new Date(a.date) - new Date(b.date));
+            calculateHwmAndDrawdownFloor();
+            saveData();
+            closeEditModal();
+            updateUI();
+            alert('Operación actualizada');
+        }
+        function deleteOperation(id) {
+            if (confirm('¿Eliminar esta operación?')) {
+                operations = operations.filter(op => op.id !== id);
+                calculateHwmAndDrawdownFloor();
+                saveData();
+                updateUI();
+            }
+        }
+
+        // === DRAWDOWN ===
+        function calculateHwmAndDrawdownFloor(fullRecalculate = false) {
+            const filteredOps = getFilteredOperations();
+            let runningBalance = settings.initialBalance;
+            highWaterMark = settings.initialBalance;
+            filteredOps.forEach(op => {
+                runningBalance += op.amount;
+                highWaterMark = Math.max(highWaterMark, runningBalance);
+            });
+            const bufferThreshold = settings.initialBalance + settings.trailingDrawdownAmount;
+            if (highWaterMark >= bufferThreshold) {
+                drawdownFloor = settings.initialBalance;
+            } else {
+                drawdownFloor = Math.max(
+                    highWaterMark - settings.trailingDrawdownAmount,
+                    settings.initialBalance - settings.trailingDrawdownAmount
+                );
+            }
+        }
+
+        // === UI UPDATES ===
+        function updateUI() {
+            updateDashboard();
+            if (document.getElementById('historial').classList.contains('active')) {
+                renderOperations();
+            }
+            if (document.getElementById('estadisticas').classList.contains('active')) {
+                updateStatistics();
+            }
+        }
+        function updateDashboard() {
+            const filteredOps = getFilteredOperations();
+            const totalPL = filteredOps.reduce((sum, op) => sum + op.amount, 0);
+            const currentBalance = settings.initialBalance + totalPL;
+            const roi = settings.initialBalance > 0 ? (totalPL / settings.initialBalance * 100) : 0;
+            document.getElementById('initial-balance-display').textContent = formatCurrency(settings.initialBalance);
+            document.getElementById('current-balance').textContent = formatCurrency(currentBalance);
+            const plElem = document.getElementById('profit-loss');
+            plElem.textContent = formatCurrency(totalPL);
+            plElem.className = totalPL > 0 ? 'positive' : (totalPL < 0 ? 'negative' : '');
+            const roiElem = document.getElementById('roi');
+            roiElem.textContent = formatPercentage(roi);
+            roiElem.className = roi > 0 ? 'positive' : (roi < 0 ? 'negative' : '');
+            document.getElementById('high-water-mark').textContent = formatCurrency(highWaterMark);
+            document.getElementById('drawdown-floor').textContent = formatCurrency(drawdownFloor);
+            const marginToFloor = currentBalance - drawdownFloor;
+            const marginElem = document.getElementById('margin-to-floor');
+            marginElem.textContent = formatCurrency(marginToFloor);
+            marginElem.className = marginToFloor > 0 ? 'positive' : 'negative';
+            document.getElementById('consistency-limit-display').textContent = settings.consistencyPercentage;
+            updateConsistencyRule();
+            renderCapitalGrowthChart();
+        }
+        function updateConsistencyRule() {
+            const filteredOps = getFilteredOperations();
+            const dailyProfits = {};
+            filteredOps.forEach(op => {
+                if (!dailyProfits[op.date]) dailyProfits[op.date] = 0;
+                dailyProfits[op.date] += op.amount;
+            });
+            const positiveDays = Object.values(dailyProfits).filter(p => p > 0);
+            if (positiveDays.length === 0) {
+                document.getElementById('consistency-details').textContent = 'No hay datos suficientes';
+                document.getElementById('consistency-progress').style.width = '0%';
+                return;
+            }
+            const maxDay = Math.max(...positiveDays);
+            const totalPositive = positiveDays.reduce((s, p) => s + p, 0);
+            const percentage = (maxDay / totalPositive * 100);
+            const progress = Math.min(percentage / settings.consistencyPercentage * 100, 100);
+            const bar = document.getElementById('consistency-progress');
+            bar.style.width = `${progress}%`;
+            bar.className = 'progress-bar';
+            if (percentage > settings.consistencyPercentage) bar.classList.add('danger');
+            else if (percentage > settings.consistencyPercentage * 0.8) bar.classList.add('warning');
+            document.querySelector('.progress-label').textContent = formatPercentage(percentage);
+            document.getElementById('consistency-details').textContent =
+                `Día más rentable: ${formatCurrency(maxDay)} (${formatPercentage(percentage)}) de ${formatCurrency(totalPositive)} total`;
+        }
+        function renderCapitalGrowthChart() {
+            const canvas = document.getElementById('capitalGrowthChart');
+            if (!canvas) return;
+            if (window.capitalGrowthChartInstance) {
+                window.capitalGrowthChartInstance.destroy();
+            }
+            const filteredOps = getFilteredOperations();
+            const labels = [];
+            const balanceData = [];
+            const drawdownData = [];
+            let runningBalance = settings.initialBalance;
+            let currentHWM = settings.initialBalance;
+            filteredOps.forEach(op => {
+                runningBalance += op.amount;
+                currentHWM = Math.max(currentHWM, runningBalance);
+                labels.push(formatDate(op.date));
+                balanceData.push(runningBalance);
+                let ddValue = currentHWM - settings.trailingDrawdownAmount;
+                if (currentHWM >= settings.initialBalance + settings.trailingDrawdownAmount) {
+                    ddValue = settings.initialBalance;
+                } else {
+                    ddValue = Math.max(ddValue, settings.initialBalance - settings.trailingDrawdownAmount);
+                }
+                drawdownData.push(ddValue);
+            });
+            window.capitalGrowthChartInstance = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Balance',
+                            data: balanceData,
+                            borderColor: '#4a90e2',
+                            backgroundColor: 'rgba(74, 144, 226, 0.1)',
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 3
+                        },
+                        {
+                            label: 'Suelo Drawdown',
+                            data: drawdownData,
+                            borderColor: '#e53e3e',
+                            borderWidth: 2,
+                            fill: false,
+                            pointRadius: 3,
+                            borderDash: [5, 5]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: { maxRotation: 45, minRotation: 45 }
+                        },
+                        y: {
+                            ticks: {
+                                callback: (v) => formatCurrency(v)
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // === HISTORIAL ===
+        function populateMonthFilter() {
+            const sel = document.getElementById('filter-month');
+            const months = new Set(operations.map(op => op.month).filter(m => m));
+            const sorted = Array.from(months).sort((a, b) => b.localeCompare(a));
+            while (sel.options.length > 1) sel.remove(1);
+            sorted.forEach(m => {
+                const o = document.createElement('option');
+                o.value = m;
+                o.textContent = formatMonth(m);
+                sel.appendChild(o);
+            });
+        }
+        function filterOperations() {
+            const month = document.getElementById('filter-month').value;
+            const type = document.getElementById('filter-type').value;
+            const result = document.getElementById('filter-result').value;
+            const exitType = document.getElementById('filter-exit').value;
+            let filtered = getFilteredOperations();
+            if (month) filtered = filtered.filter(op => op.month === month);
+            if (type) filtered = filtered.filter(op => op.type === type);
+            if (result === 'win') filtered = filtered.filter(op => op.amount > 0);
+            if (result === 'loss') filtered = filtered.filter(op => op.amount < 0);
+            if (exitType) filtered = filtered.filter(op => op.exitType === exitType);
+            renderOperations(filtered);
+        }
+        function renderOperations(filteredOps = null) {
+            const list = document.getElementById('operations-list');
+            list.innerHTML = '';
+            const ops = filteredOps || getFilteredOperations();
+            if (ops.length === 0) {
+                list.innerHTML = '<tr><td colspan="14" style="text-align: center;">No hay operaciones</td></tr>';
+                return;
+            }
+            const sorted = [...ops].sort((a, b) => new Date(b.date) - new Date(a.date));
+            sorted.forEach(op => {
+                const tr = document.createElement('tr');
+                const typeDisplay = op.type === 'bullish' ? 'Alcista' : (op.type === 'bearish' ? 'Bajista' : '-');
+                tr.innerHTML = `
+                    <td>${formatDate(op.date)}</td>
+                    <td>${op.month ? formatMonth(op.month) : '-'}</td>
+                    <td>${op.contract || '-'}</td>
+                    <td>${typeDisplay}</td>
+                    <td>${op.activo || '-'}</td>
+                    <td>${op.entryPrice ? op.entryPrice.toFixed(2) : '-'}</td>
+                    <td>${op.exitPrice ? op.exitPrice.toFixed(2) : '-'}</td>
+                    <td>${op.entryTime || '-'}</td>
+                    <td>${op.exitTime || '-'}</td>
+                    <td>${op.duration || '-'}</td>
+                    <td>${op.points !== null ? op.points.toFixed(1) : '-'}</td>
+                    <td>
+                        ${op.observations 
+                            ? `<span class="obs-tooltip" data-obs="${escapeHtml(op.observations)}">Nota</span>` 
+                            : '-'
+                        }
+                    </td>
+                    <td class="${op.amount > 0 ? 'positive' : op.amount < 0 ? 'negative' : ''}">${formatCurrency(op.amount)}</td>
+                    <td>
+                        <button onclick="editOperation(${op.id})" class="btn-secondary" style="padding: 5px 10px; margin-right: 5px;">Editar</button>
+                        <button onclick="deleteOperation(${op.id})" class="btn-danger" style="padding: 5px 10px;">Borrar</button>
+                    </td>
+                `;
+                list.appendChild(tr);
+            });
+        }
+
+        // === ESTADÍSTICAS ===
+        function updateStatistics() {
+            const filteredOps = getFilteredOperations();
+            const cont = document.getElementById('stats-content');
+            if (filteredOps.length === 0) {
+                cont.innerHTML = '<p style="text-align: center; color: #718096;">No hay operaciones para calcular estadísticas</p>';
+                return;
+            }
+            const tOps = filteredOps.length;
+            const wOps = filteredOps.filter(op => op.amount > 0);
+            const lOps = filteredOps.filter(op => op.amount < 0);
+            const tWins = wOps.length;
+            const tLosses = lOps.length;
+            const tProfit = wOps.reduce((s, op) => s + op.amount, 0);
+            const tLoss = lOps.reduce((s, op) => s + op.amount, 0);
+            const netP = tProfit + tLoss;
+            const winR = (tWins + tLosses) > 0 ? (tWins / (tWins + tLosses) * 100) : 0;
+            const avgW = tWins > 0 ? tProfit / tWins : 0;
+            const avgL = tLosses > 0 ? Math.abs(tLoss / tLosses) : 0;
+            const pF = (tLoss !== 0) ? Math.abs(tProfit / tLoss) : (tProfit > 0 ? Infinity : 0);
+
+            const exitTypes = {};
+            filteredOps.forEach(op => {
+                const type = op.exitType || 'N/A';
+                if (!exitTypes[type]) exitTypes[type] = { count: 0, wins: 0, total: 0 };
+                exitTypes[type].count++;
+                if (op.amount > 0) exitTypes[type].wins++;
+                exitTypes[type].total += op.amount;
+            });
+            let exitStatsHtml = '<h4 style="margin-top: 30px; margin-bottom: 15px;">Estadísticas por Tipo de Salida</h4><div class="grid grid-4">';
+            Object.keys(exitTypes).forEach(type => {
+                const data = exitTypes[type];
+                const winRate = (data.wins / data.count * 100).toFixed(1);
+                exitStatsHtml += `
+                    <div class="stat-box">
+                        <h4>${type}</h4>
+                        <p>${data.count} ops</p>
+                        <p style="font-size: 14px; margin-top: 5px;">Win Rate: ${winRate}%</p>
+                        <p style="font-size: 14px;" class="${data.total >= 0 ? 'positive' : 'negative'}">${formatCurrency(data.total)}</p>
+                    </div>
+                `;
+            });
+            exitStatsHtml += '</div>';
+
+            let contractStatsHtml = '';
+            const contractTypes = {};
+            filteredOps.forEach(op => {
+                if (op.contract) {
+                    if (!contractTypes[op.contract]) contractTypes[op.contract] = { count: 0, wins: 0, total: 0 };
+                    contractTypes[op.contract].count++;
+                    if (op.amount > 0) contractTypes[op.contract].wins++;
+                    contractTypes[op.contract].total += op.amount;
+                }
+            });
+            if (Object.keys(contractTypes).length > 0) {
+                contractStatsHtml = '<h4 style="margin-top: 30px; margin-bottom: 15px;">Estadísticas por Contrato</h4><div class="grid grid-4">';
+                Object.keys(contractTypes).forEach(contract => {
+                    const data = contractTypes[contract];
+                    const winRate = (data.wins / data.count * 100).toFixed(1);
+                    contractStatsHtml += `
+                        <div class="stat-box">
+                            <h4>${contract}</h4>
+                            <p>${data.count} ops</p>
+                            <p style="font-size: 14px; margin-top: 5px;">Win Rate: ${winRate}%</p>
+                            <p style="font-size: 14px;" class="${data.total >= 0 ? 'positive' : 'negative'}">${formatCurrency(data.total)}</p>
+                        </div>
+                    `;
+                });
+                contractStatsHtml += '</div>';
+            }
+            cont.innerHTML = `
+                <div class="grid grid-4">
+                    <div class="stat-box">
+                        <h4>Total Operaciones</h4>
+                        <p>${tOps}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Ganadoras</h4>
+                        <p class="positive">${tWins}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Perdedoras</h4>
+                        <p class="negative">${tLosses}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Win Rate</h4>
+                        <p class="${winR >= 50 ? 'positive' : 'negative'}">${formatPercentage(winR)}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Beneficio Bruto</h4>
+                        <p class="positive">${formatCurrency(tProfit)}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Pérdida Bruta</h4>
+                        <p class="negative">${formatCurrency(Math.abs(tLoss))}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Beneficio Neto</h4>
+                        <p class="${netP >= 0 ? 'positive' : 'negative'}">${formatCurrency(netP)}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Profit Factor</h4>
+                        <p class="${pF >= 1 ? 'positive' : 'negative'}">${pF === Infinity ? '∞' : pF.toFixed(2)}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Ganancia Media</h4>
+                        <p class="positive">${formatCurrency(avgW)}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Pérdida Media</h4>
+                        <p class="negative">${formatCurrency(avgL)}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Ratio R/R</h4>
+                        <p>${avgL > 0 ? (avgW / avgL).toFixed(2) : '0.00'}</p>
+                    </div>
+                    <div class="stat-box">
+                        <h4>Expectativa</h4>
+                        <p class="${netP/tOps >= 0 ? 'positive' : 'negative'}">${formatCurrency(netP / tOps)}</p>
+                    </div>
+                </div>
+                ${exitStatsHtml}
+                ${contractStatsHtml}
+            `;
+        }
+
+        // === EXCEL IMPORT ===
+        function handleFileUpload() {
+            const fileInput = document.getElementById('excel-file');
+            const file = fileInput.files[0];
+            const statusDiv = document.getElementById('import-status');
+            if (!file) {
+                statusDiv.textContent = 'Por favor, selecciona un archivo.';
+                statusDiv.style.color = '#e53e3e';
+                return;
+            }
+            statusDiv.textContent = 'Procesando archivo...';
+            statusDiv.style.color = '#2c5282';
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const newOps = parseWorkbook(workbook);
+                    if (newOps.length > 0) {
+                        const existingOpsIds = new Set(operations.map(op => `${op.date}-${op.amount}`));
+                        const uniqueNewOps = newOps.filter(op => !existingOpsIds.has(`${op.date}-${op.amount}`));
+                        operations = operations.concat(uniqueNewOps);
+                        operations.sort((a, b) => new Date(a.date) - new Date(b.date));
+                        saveData();
+                        calculateHwmAndDrawdownFloor(true);
+                        populateViewSelector();
+                        updateUI();
+                        statusDiv.innerHTML = `<span style="color: #38a169;">¡Éxito!</span> Se importaron <strong>${uniqueNewOps.length}</strong> nuevas operaciones.`;
+                    } else {
+                        statusDiv.textContent = 'No se encontraron operaciones válidas en el archivo.';
+                        statusDiv.style.color = '#e53e3e';
+                    }
+                } catch (error) {
+                    console.error('Error al procesar el archivo:', error);
+                    statusDiv.textContent = 'Error al procesar el archivo. Revisa la consola para más detalles.';
+                    statusDiv.style.color = '#e53e3e';
+                }
+            };
+            reader.onerror = function() {
+                statusDiv.textContent = 'Error al leer el archivo.';
+                statusDiv.style.color = '#e53e3e';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+function parseWorkbook(workbook) {
+    const allOps = [];
+    const monthMap = {
+        'ENERO': '01', 'FEBRERO': '02', 'MARZO': '03',
+        'ABRIL': '04', 'MAYO': '05', 'JUNIO': '06',
+        'JULIO': '07', 'AGOSTO': '08', 'SEPTIEMBRE': '09',
+        'OCTUBRE': '10', 'NOVIEMBRE': '11', 'DICIEMBRE': '12'
+    };
+
+    // === CONVERSORES ===
+    function parseDate(cell) {
+        if (!cell) return null;
+        const str = String(cell).trim();
+
+        // 1. Formato número Excel (45929)
+        if (!isNaN(cell) && typeof cell === 'number') {
+            const d = new Date((cell - 25569) * 86400 * 1000);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        // 2. Formato texto DD/MM/YYYY
+        const match = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (match) {
+            return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+        }
+
+        return null;
+    }
+
+    function parseTimeWithSeconds(cell) {
+        if (!cell) return null;
+        const str = String(cell).trim();
+        const match = str.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+        if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+        const simple = str.match(/(\d{1,2}):(\d{2})/);
+        return simple ? `${simple[1].padStart(2, '0')}:${simple[2]}` : null;
+    }
+
+    function parseDurationTime(cell) {
+        if (!cell) return null;
+        const str = String(cell).trim();
+        const match = str.match(/(\d+):(\d{2}):(\d{2})/);
+        if (!match) return null;
+        const h = parseInt(match[1]);
+        const m = parseInt(match[2]);
+        const totalMins = h * 60 + m;
+        return totalMins === 0 ? null : 
+               totalMins < 60 ? `${totalMins}m` : 
+               `${Math.floor(totalMins/60)}h ${totalMins%60}m`;
+    }
+
+    function cleanPrice(str) {
+        if (!str) return null;
+        const cleaned = String(str)
+            .replace(/[^\d,.-]/g, '')
+            .replace(/\.(?=\d{3})/g, '')
+            .replace(',', '.');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? null : num;
+    }
+
+    workbook.SheetNames.forEach(sheetName => {
+        const upper = sheetName.toUpperCase();
+        let monthNum = null;
+        let year = '2024';
+
+        for (const [month, num] of Object.entries(monthMap)) {
+            if (upper.includes(month)) {
+                monthNum = num;
+                break;
+            }
+        }
+        if (!monthNum) return;
+
+        const yearMatch = sheetName.match(/\d{4}/);
+        if (yearMatch) year = yearMatch[0];
+
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+
+        jsonData.forEach((row, index) => {
+            if (index < 2) return;
+            if (!row || row.length < 10) return;
+            if (row[0] == null || String(row[0]).trim() === '') return;
+
+            try {
+                const date = parseDate(row[0]);
+                if (!date) return;
+
+                const contract = row[1] ? String(row[1]).trim() : null;
+                if (!contract) return;
+
+                const entryTime = parseTimeWithSeconds(row[2]);
+                const exitTime = parseTimeWithSeconds(row[3]);
+                const duration = parseDurationTime(row[4]) || (entryTime && exitTime ? calculateDuration(entryTime, exitTime) : null);
+
+                const tradeType = row[5] ? String(row[5]).toLowerCase() : '';
+                const type = tradeType.includes('largo') ? 'bullish' : (tradeType.includes('corto') ? 'bearish' : null);
+
+                const entryPrice = cleanPrice(row[6]);
+                const exitPrice = cleanPrice(row[7]);
+
+                let points = null;
+                if (row[8] != null) {
+                    points = parseFloat(String(row[8]).replace(',', '.'));
+                    if (isNaN(points)) points = null;
+                }
+
+                let amount = null;
+                if (row[9] != null) {
+                    amount = cleanPrice(row[9]);
+                }
+                if (amount == null || isNaN(amount)) return;
+
+                let observations = null;
+                for (let i = 10; i < row.length; i++) {
+                    if (row[i] && String(row[i]).trim() !== '' && !String(row[i]).includes('TOTAL')) {
+                        observations = String(row[i]).trim();
+                        break;
+                    }
+                }
+
+                let news = 0;
+                for (let i = 10; i < row.length; i++) {
+                    if (row[i]) {
+                        const text = String(row[i]).toLowerCase();
+                        if (/pib|petroleo|confianza|subsidio|festivo|empleo|fed|ipc|dato|news/i.test(text)) {
+                            news = Math.min(news + 1, 4);
+                        }
+                    }
+                }
+
+                const monthKey = `${year}-${monthNum}`;
+                const op = {
+                    id: Date.now() + index + Math.random(),
+                    date: date,
+                    month: monthKey,
+                    type: type,
+                    activo: contract.includes('MNQ') ? 'MNQ (Micro Nasdaq)' : 'NQ (Nasdaq)',
+                    entryTime: entryTime,
+                    exitTime: exitTime,
+                    entryPrice: entryPrice,
+                    exitPrice: exitPrice,
+                    exitType: null,
+                    duration: duration,
+                    amount: amount,
+                    news: news,
+                    observations: observations || null,
+                    contract: contract,
+                    points: points
+                };
+                allOps.push(op);
+            } catch (e) {
+                console.warn(`Fila ${index + 1} en ${sheetName} ignorada:`, e);
+            }
+        });
+    });
+
+    return allOps;
+}
+    </script>
+</body>
+</html>
