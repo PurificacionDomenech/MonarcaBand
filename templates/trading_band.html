@@ -410,13 +410,15 @@ function renderPrice(d){
   const lastTy = ty.length ? ty[ty.length-1] : 0;
   const lastAy = ay.length ? ay[ay.length-1] : 0;
   const isBull = lastTy >= lastAy;
-  const bandLine   = isBull ? '#FFD700'             : '#C0C0C8';
-  const bandLineFd = isBull ? 'rgba(255,215,0,.55)' : 'rgba(192,192,200,.55)';
+
+  // Líneas siempre distintas: Trigger=blanco brillante, Average=naranja dorado punteado
+  const trgColor = '#FFFFFF';
+  const avgColor = '#FFA500';
 
   const ldTrg = document.getElementById('ld-trg');
   const ldAvg = document.getElementById('ld-avg');
-  if(ldTrg) ldTrg.style.background = bandLine;
-  if(ldAvg) ldAvg.style.background = bandLineFd;
+  if(ldTrg) ldTrg.style.background = isBull ? '#FFD700' : '#C0C0C8';
+  if(ldAvg) ldAvg.style.background = avgColor;
 
   // ── Relleno segmentado por dirección ────────────────────────
   const n = Math.min(tx.length, ax.length, ty.length, ay.length);
@@ -445,9 +447,24 @@ function renderPrice(d){
   }
 
   const trg={type:'scatter',name:'Trigger',x:tx,y:ty,
-    line:{color:bandLine,width:2},hovertemplate:'Trigger: %{y:.2f}<extra></extra>'};
+    line:{color:trgColor,width:1.5},hovertemplate:'Trigger: %{y:.2f}<extra></extra>'};
   const avg={type:'scatter',name:'Average',x:ax,y:ay,
-    line:{color:bandLineFd,width:2,dash:'dot'},hovertemplate:'Average: %{y:.2f}<extra></extra>'};
+    line:{color:avgColor,width:1.5,dash:'dot'},hovertemplate:'Average: %{y:.2f}<extra></extra>'};
+
+  // ── Triángulos en el cruce (nivel de la banda, no del precio) ─
+  const trigMap={}, avgMap={};
+  (ch.trigger||[]).forEach(p=>{ trigMap[p.x]=p.y; });
+  (ch.average||[]).forEach(p=>{ avgMap[p.x]=p.y; });
+  const mkCross=(arr,sym,col,nm)=>{
+    const pts=arr.map(s=>{
+      const tv=trigMap[s.x]??s.price, av=avgMap[s.x]??s.price;
+      return {x:new Date(s.x), y:(tv+av)/2};
+    });
+    return {type:'scatter',name:nm,mode:'markers',
+      x:pts.map(p=>p.x), y:pts.map(p=>p.y),
+      marker:{symbol:sym,color:col,size:11,line:{color:'rgba(0,0,0,.4)',width:1}},
+      hovertemplate:nm+': %{y:.4f}<extra></extra>'};
+  };
   const es={type:'scatter',name:d.ema_short_name,
     x:(ch.ema_short||[]).map(p=>new Date(p.x)),y:(ch.ema_short||[]).map(p=>p.y),
     line:{color:'#378add',width:1.5},hovertemplate:d.ema_short_name+': %{y:.2f}<extra></extra>'};
@@ -489,8 +506,8 @@ function renderPrice(d){
   el2.innerHTML = '';
   Plotly.newPlot(el2,
     [...segFills, candles, trg, avg, es, el,
-     mk(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#00e676','▲ Alcista',-0.003),
-     mk(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#ff1744','▼ Bajista', 0.003)],
+     mkCross(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#00e676','▲ Alcista'),
+     mkCross(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#ff1744','▼ Bajista')],
     layout,
     {responsive:true,displayModeBar:true,modeBarButtonsToRemove:['select2d','lasso2d'],displaylogo:false}
   );
