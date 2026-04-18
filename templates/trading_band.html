@@ -410,17 +410,53 @@ function renderPrice(d){
   const lastTy = ty.length ? ty[ty.length-1] : 0;
   const lastAy = ay.length ? ay[ay.length-1] : 0;
   const isBull = lastTy >= lastAy;
-  const bandFill   = isBull ? 'rgba(255,200,50,.07)'   : 'rgba(180,180,195,.07)';
-  const bandLine   = isBull ? '#FFD700'                : '#C0C0C8';
-  const bandLineFd = isBull ? 'rgba(255,215,0,.40)'    : 'rgba(192,192,200,.40)';
+  const bandLine   = isBull ? '#FFD700'             : '#C0C0C8';
+  const bandLineFd = isBull ? 'rgba(255,215,0,.55)' : 'rgba(192,192,200,.55)';
 
   const ldTrg = document.getElementById('ld-trg');
   const ldAvg = document.getElementById('ld-avg');
   if(ldTrg) ldTrg.style.background = bandLine;
   if(ldAvg) ldAvg.style.background = bandLineFd;
 
-  const fill={type:'scatter',name:'Banda TB',x:[...tx,...[...ax].reverse()],y:[...ty,...[...ay].reverse()],
-    fill:'toself',fillcolor:bandFill,line:{color:'transparent'},showlegend:false,hoverinfo:'skip'};
+  // ── Relleno segmentado por dirección ────────────────────────
+  const n = Math.min(tx.length, ax.length, ty.length, ay.length);
+  const segFills = [], crossX = [], crossY = [], crossColors = [];
+  let segStart = 0;
+  for(let i = 1; i <= n; i++){
+    const bull = ty[i-1] >= ay[i-1];
+    const nextBull = i < n ? ty[i] >= ay[i] : !bull;
+    if(nextBull !== bull || i === n){
+      const segEnd = i;
+      const segTx = tx.slice(segStart, segEnd);
+      const segTy = ty.slice(segStart, segEnd);
+      const segAx = ax.slice(segStart, segEnd);
+      const segAy = ay.slice(segStart, segEnd);
+      segFills.push({
+        type:'scatter', name:'', showlegend:false, hoverinfo:'skip',
+        x:[...segTx, ...[...segAx].reverse()],
+        y:[...segTy, ...[...segAy].reverse()],
+        fill:'toself',
+        fillcolor: bull ? 'rgba(0,210,100,.22)' : 'rgba(210,50,80,.22)',
+        line:{color:'transparent'}
+      });
+      if(segStart > 0){
+        const ci = segStart;
+        const midY = (ty[ci] + ay[ci]) / 2;
+        crossX.push(tx[ci]);
+        crossY.push(midY);
+        crossColors.push(bull ? '#00e676' : '#ff1744');
+      }
+      segStart = i;
+    }
+  }
+  const crossovers = crossX.length ? [{
+    type:'scatter', name:'Cambio tendencia', mode:'markers',
+    x: crossX, y: crossY,
+    marker:{symbol:'diamond', color: crossColors, size:9,
+            line:{color:'rgba(0,0,0,.4)', width:1}},
+    hovertemplate:'Cambio: %{y:.4f}<extra></extra>'
+  }] : [];
+
   const trg={type:'scatter',name:'Trigger',x:tx,y:ty,
     line:{color:bandLine,width:2},hovertemplate:'Trigger: %{y:.2f}<extra></extra>'};
   const avg={type:'scatter',name:'Average',x:ax,y:ay,
@@ -465,7 +501,8 @@ function renderPrice(d){
   const el2 = document.getElementById('main-chart');
   el2.innerHTML = '';
   Plotly.newPlot(el2,
-    [fill, candles, trg, avg, es, el,
+    [...segFills, candles, trg, avg, es, el,
+     ...crossovers,
      mk(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#00e676','TB ▲',-0.003),
      mk(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#ff1744','TB ▼', 0.003),
      mk(sigs.filter(s=>s.type==='rsi_os'),  'circle',       '#29b6f6','RSI OS',-0.004),
