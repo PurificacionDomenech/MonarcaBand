@@ -236,8 +236,8 @@ select option{background:#030d0a}
   <div id="chart-wrap">
     <div id="chart-hdr">
       <span class="ct" id="chart-title">PRECIO + TRADINGBAND</span>
-      <div class="leg"><div class="ld" style="background:#00c896"></div>Trigger SMA12</div>
-      <div class="leg"><div class="ld" style="background:rgba(0,200,150,.35)"></div>Average SMA12</div>
+      <div class="leg"><div class="ld" id="ld-trg" style="background:#FFD700"></div>Trigger SMA12</div>
+      <div class="leg"><div class="ld" id="ld-avg" style="background:rgba(255,215,0,.40)"></div>Average SMA12</div>
       <div class="leg"><div class="ld" style="background:#378add"></div>EMA200</div>
       <div class="leg"><div class="ld" style="background:#3b6d11"></div>EMA800</div>
     </div>
@@ -407,12 +407,24 @@ function renderPrice(d){
   const tx=(ch.trigger||[]).map(p=>new Date(p.x)), ty=(ch.trigger||[]).map(p=>p.y);
   const ax=(ch.average||[]).map(p=>new Date(p.x)), ay=(ch.average||[]).map(p=>p.y);
 
+  const lastTy = ty.length ? ty[ty.length-1] : 0;
+  const lastAy = ay.length ? ay[ay.length-1] : 0;
+  const isBull = lastTy >= lastAy;
+  const bandFill   = isBull ? 'rgba(255,200,50,.07)'   : 'rgba(180,180,195,.07)';
+  const bandLine   = isBull ? '#FFD700'                : '#C0C0C8';
+  const bandLineFd = isBull ? 'rgba(255,215,0,.40)'    : 'rgba(192,192,200,.40)';
+
+  const ldTrg = document.getElementById('ld-trg');
+  const ldAvg = document.getElementById('ld-avg');
+  if(ldTrg) ldTrg.style.background = bandLine;
+  if(ldAvg) ldAvg.style.background = bandLineFd;
+
   const fill={type:'scatter',name:'Banda TB',x:[...tx,...[...ax].reverse()],y:[...ty,...[...ay].reverse()],
-    fill:'toself',fillcolor:'rgba(0,200,150,.06)',line:{color:'transparent'},showlegend:false,hoverinfo:'skip'};
+    fill:'toself',fillcolor:bandFill,line:{color:'transparent'},showlegend:false,hoverinfo:'skip'};
   const trg={type:'scatter',name:'Trigger',x:tx,y:ty,
-    line:{color:'#00c896',width:2},hovertemplate:'Trigger: %{y:.2f}<extra></extra>'};
+    line:{color:bandLine,width:2},hovertemplate:'Trigger: %{y:.2f}<extra></extra>'};
   const avg={type:'scatter',name:'Average',x:ax,y:ay,
-    line:{color:'rgba(0,200,150,.40)',width:2,dash:'dot'},hovertemplate:'Average: %{y:.2f}<extra></extra>'};
+    line:{color:bandLineFd,width:2,dash:'dot'},hovertemplate:'Average: %{y:.2f}<extra></extra>'};
   const es={type:'scatter',name:d.ema_short_name,
     x:(ch.ema_short||[]).map(p=>new Date(p.x)),y:(ch.ema_short||[]).map(p=>p.y),
     line:{color:'#378add',width:1.5},hovertemplate:d.ema_short_name+': %{y:.2f}<extra></extra>'};
