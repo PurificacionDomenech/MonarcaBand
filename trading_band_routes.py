@@ -279,22 +279,23 @@ def _ts(idx):
 
 @router.get("/signal/{ticker}")
 async def get_tb_signal(ticker: str, use_range_bars: bool = True):
-    key = ticker.upper()
+    key = f"{ticker.upper()}_{'rb' if use_range_bars else '4h'}"
     now = time.time()
     cached = _cache.get(key)
     if cached and (now - cached["ts"]) < _CACHE_TTL:
         return cached["data"]
 
-    cfg = TB_CONFIG.get(key, TB_CONFIG["_default"])
+    cfg = TB_CONFIG.get(ticker.upper(), TB_CONFIG["_default"])
 
+    sym = ticker.upper()
     try:
         if use_range_bars:
-            raw = await _download(key, period="60d", interval="5m")
+            raw = await _download(sym, period="60d", interval="5m")
         else:
-            raw = await _download(key, period="2y", interval="4h")
+            raw = await _download(sym, period="2y", interval="4h")
 
         if raw is None or (hasattr(raw, "empty") and raw.empty):
-            return {"error": f"Sin datos para {key}"}
+            return {"error": f"Sin datos para {sym}"}
 
         df = _clean(raw)
 

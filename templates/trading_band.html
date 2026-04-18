@@ -439,7 +439,7 @@ function renderPrice(d){
           y:[...segTy, ...[...segAy].reverse()],
           fill:'toself',
           fillcolor: bull ? 'rgba(0,200,90,.40)' : 'rgba(210,45,75,.40)',
-          line:{color: bull ? 'rgba(0,200,90,.0)' : 'rgba(210,45,75,.0)'}
+          line:{width:0}
         });
       }
       segStart = i;
@@ -452,17 +452,24 @@ function renderPrice(d){
     line:{color:avgColor,width:1.5,dash:'dot'},hovertemplate:'Average: %{y:.2f}<extra></extra>'};
 
   // ── Triángulos en el cruce (nivel de la banda, no del precio) ─
-  const trigMap={}, avgMap={};
-  (ch.trigger||[]).forEach(p=>{ trigMap[p.x]=p.y; });
-  (ch.average||[]).forEach(p=>{ avgMap[p.x]=p.y; });
+  const trigTimes=(ch.trigger||[]).map(p=>new Date(p.x).getTime());
+  const trigVals=(ch.trigger||[]).map(p=>p.y);
+  const avgTimes=(ch.average||[]).map(p=>new Date(p.x).getTime());
+  const avgVals=(ch.average||[]).map(p=>p.y);
+  function nearestVal(times,vals,t){
+    const ms=new Date(t).getTime(); let bi=0,bd=Infinity;
+    for(let i=0;i<times.length;i++){const d=Math.abs(times[i]-ms);if(d<bd){bd=d;bi=i;}}
+    return vals[bi]??null;
+  }
   const mkCross=(arr,sym,col,nm)=>{
     const pts=arr.map(s=>{
-      const tv=trigMap[s.x]??s.price, av=avgMap[s.x]??s.price;
+      const tv=nearestVal(trigTimes,trigVals,s.x)??s.price;
+      const av=nearestVal(avgTimes,avgVals,s.x)??s.price;
       return {x:new Date(s.x), y:(tv+av)/2};
     });
     return {type:'scatter',name:nm,mode:'markers',
       x:pts.map(p=>p.x), y:pts.map(p=>p.y),
-      marker:{symbol:sym,color:col,size:11,line:{color:'rgba(0,0,0,.4)',width:1}},
+      marker:{symbol:sym,color:col,size:12,line:{color:'rgba(0,0,0,.5)',width:1}},
       hovertemplate:nm+': %{y:.4f}<extra></extra>'};
   };
   const es={type:'scatter',name:d.ema_short_name,
