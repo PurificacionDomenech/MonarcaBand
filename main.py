@@ -1256,14 +1256,24 @@ async def telegram_webhook(request: Request):
 
 @app.get("/")
 async def splash():
+    return FileResponse("templates/trading_band_splash.html")
+
+
+@app.get("/app")
+async def dashboard():
+    return FileResponse("templates/trading_band.html")
+
+
+@app.get("/matrix")
+async def matrix_splash():
     for name in ("Splash.html", "splash.html"):
         if os.path.exists(f"templates/{name}"):
             return FileResponse(f"templates/{name}")
     return FileResponse("templates/index.html")
 
 
-@app.get("/app")
-async def dashboard():
+@app.get("/matrix/app")
+async def matrix_dashboard():
     return FileResponse("templates/index.html")
 
 
