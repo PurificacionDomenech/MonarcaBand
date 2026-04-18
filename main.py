@@ -11,6 +11,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
+    from trading_band_routes import router as tb_router
+    HAS_TB = True
+except Exception as _tb_err:
+    HAS_TB = False
+    print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
+
+try:
     from contextlib import asynccontextmanager
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -1225,6 +1232,9 @@ else:
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+if HAS_TB:
+    app.include_router(tb_router)
+
 
 # ─── WEBHOOK TELEGRAM (fallback) ─────────────────────────────
 
@@ -1584,6 +1594,19 @@ async def sparkline(ticker: str):
         return {"closes": [float(c) for c in closes], "pct": round(pct, 2)}
     except:
         return {"closes": [], "pct": 0}
+
+
+# ─── TRADING BAND RUTAS ──────────────────────────────────────
+
+
+@app.get("/trading-band")
+async def trading_band_splash():
+    return FileResponse("templates/trading_band_splash.html")
+
+
+@app.get("/trading-band/app")
+async def trading_band_app():
+    return FileResponse("templates/trading_band.html")
 
 
 if __name__ == "__main__":

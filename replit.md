@@ -1,6 +1,20 @@
-# The Matrix Lab
+# The Matrix Lab + Trading Band
 
-A financial market dashboard with real-time technical analysis built with FastAPI.
+A multi-project financial market dashboard with real-time technical analysis built with FastAPI.
+
+## Projects
+
+### The Matrix Lab (/)
+Original confluence analysis engine with EMA 200/800, RSI, fractal levels, and automated alerts.
+
+### Trading Band (/trading-band)
+New project using MonarcaBand (SMA12 Trigger + SMA12 Average) + RSI with 3-level divergences.
+- **Dashboard**: `/trading-band/app`
+- **API**: `/api/tradingband/signal/{ticker}`
+- **Alerts**: trend-change arrows, RSI overbought/oversold, RSI divergences in key zones
+- **Logo**: butterfly image (static/trading_band_logo.png)
+- **Assets**: US30, NASDAQ, S&P500, Gold, Silver, Oil, USD/JPY, GBP/JPY, EUR/USD, Bitcoin
+- **Files**: `trading_band_routes.py`, `templates/trading_band.html`, `templates/trading_band_splash.html`
 
 ## Overview
 
