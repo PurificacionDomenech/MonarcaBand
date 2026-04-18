@@ -420,42 +420,29 @@ function renderPrice(d){
 
   // ── Relleno segmentado por dirección ────────────────────────
   const n = Math.min(tx.length, ax.length, ty.length, ay.length);
-  const segFills = [], crossX = [], crossY = [], crossColors = [];
+  const segFills = [];
   let segStart = 0;
   for(let i = 1; i <= n; i++){
     const bull = ty[i-1] >= ay[i-1];
     const nextBull = i < n ? ty[i] >= ay[i] : !bull;
     if(nextBull !== bull || i === n){
-      const segEnd = i;
-      const segTx = tx.slice(segStart, segEnd);
-      const segTy = ty.slice(segStart, segEnd);
-      const segAx = ax.slice(segStart, segEnd);
-      const segAy = ay.slice(segStart, segEnd);
-      segFills.push({
-        type:'scatter', name:'', showlegend:false, hoverinfo:'skip',
-        x:[...segTx, ...[...segAx].reverse()],
-        y:[...segTy, ...[...segAy].reverse()],
-        fill:'toself',
-        fillcolor: bull ? 'rgba(0,210,100,.22)' : 'rgba(210,50,80,.22)',
-        line:{color:'transparent'}
-      });
-      if(segStart > 0){
-        const ci = segStart;
-        const midY = (ty[ci] + ay[ci]) / 2;
-        crossX.push(tx[ci]);
-        crossY.push(midY);
-        crossColors.push(bull ? '#00e676' : '#ff1744');
+      const segTx = tx.slice(segStart, i);
+      const segTy = ty.slice(segStart, i);
+      const segAx = ax.slice(segStart, i);
+      const segAy = ay.slice(segStart, i);
+      if(segTx.length > 1){
+        segFills.push({
+          type:'scatter', name:'', showlegend:false, hoverinfo:'skip',
+          x:[...segTx, ...[...segAx].reverse()],
+          y:[...segTy, ...[...segAy].reverse()],
+          fill:'toself',
+          fillcolor: bull ? 'rgba(0,200,90,.40)' : 'rgba(210,45,75,.40)',
+          line:{color: bull ? 'rgba(0,200,90,.0)' : 'rgba(210,45,75,.0)'}
+        });
       }
       segStart = i;
     }
   }
-  const crossovers = crossX.length ? [{
-    type:'scatter', name:'Cambio tendencia', mode:'markers',
-    x: crossX, y: crossY,
-    marker:{symbol:'diamond', color: crossColors, size:9,
-            line:{color:'rgba(0,0,0,.4)', width:1}},
-    hovertemplate:'Cambio: %{y:.4f}<extra></extra>'
-  }] : [];
 
   const trg={type:'scatter',name:'Trigger',x:tx,y:ty,
     line:{color:bandLine,width:2},hovertemplate:'Trigger: %{y:.2f}<extra></extra>'};
@@ -502,11 +489,8 @@ function renderPrice(d){
   el2.innerHTML = '';
   Plotly.newPlot(el2,
     [...segFills, candles, trg, avg, es, el,
-     ...crossovers,
-     mk(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#00e676','TB ▲',-0.003),
-     mk(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#ff1744','TB ▼', 0.003),
-     mk(sigs.filter(s=>s.type==='rsi_os'),  'circle',       '#29b6f6','RSI OS',-0.004),
-     mk(sigs.filter(s=>s.type==='rsi_ob'),  'circle',       '#ff9800','RSI OB', 0.004)],
+     mk(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#00e676','▲ Alcista',-0.003),
+     mk(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#ff1744','▼ Bajista', 0.003)],
     layout,
     {responsive:true,displayModeBar:true,modeBarButtonsToRemove:['select2d','lasso2d'],displaylogo:false}
   );
@@ -598,8 +582,26 @@ function renderRsi(d){
     hoverlabel:{bgcolor:'#060f0c',font:{color:'#c8f0e4',size:11,family:'Share Tech Mono'}}
   };
 
+  // ── Círculos de aviso en RSI 70 / 30 ────────────────────────
+  const rsiSigs = d.signals||[];
+  const obCirc = rsiSigs.filter(s=>s.type==='rsi_ob').map(s=>({x:new Date(s.x),y:s.rsi||70}));
+  const osCirc = rsiSigs.filter(s=>s.type==='rsi_os').map(s=>({x:new Date(s.x),y:s.rsi||30}));
+  const obMark = obCirc.length ? {
+    type:'scatter', name:'RSI >70', mode:'markers',
+    x:obCirc.map(p=>p.x), y:obCirc.map(p=>p.y),
+    marker:{symbol:'circle', color:'#ff1744', size:10, line:{color:'rgba(255,255,255,.3)',width:1}},
+    hovertemplate:'RSI OB: %{y:.1f}<extra></extra>'
+  } : null;
+  const osMark = osCirc.length ? {
+    type:'scatter', name:'RSI <30', mode:'markers',
+    x:osCirc.map(p=>p.x), y:osCirc.map(p=>p.y),
+    marker:{symbol:'circle', color:'#00e676', size:10, line:{color:'rgba(255,255,255,.3)',width:1}},
+    hovertemplate:'RSI OS: %{y:.1f}<extra></extra>'
+  } : null;
+  const rsiMarkers = [obMark, osMark].filter(Boolean);
+
   const rel = document.getElementById('rsi-chart');
-  Plotly.newPlot(rel, [rsiLine, obDot, osDot, ...divTraces, ...pivMarkers], layout,
+  Plotly.newPlot(rel, [rsiLine, obDot, osDot, ...divTraces, ...pivMarkers, ...rsiMarkers], layout,
     {responsive:true,displayModeBar:false});
 
   // Sincronizar zoom con gráfico principal
