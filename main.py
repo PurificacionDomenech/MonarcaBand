@@ -18,6 +18,13 @@ except Exception as _tb_err:
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
+    from user_routes import router as auth_router, users_router
+    HAS_AUTH = True
+except Exception as _auth_err:
+    HAS_AUTH = False
+    print(f"[WARN] user_routes no disponible: {_auth_err}")
+
+try:
     from contextlib import asynccontextmanager
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -1251,6 +1258,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if HAS_TB:
     app.include_router(tb_router)
+
+if HAS_AUTH:
+    app.include_router(auth_router)
+    app.include_router(users_router)
 
 
 # ─── WEBHOOK TELEGRAM (fallback) ─────────────────────────────
