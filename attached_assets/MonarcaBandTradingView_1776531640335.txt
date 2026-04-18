@@ -1,0 +1,134 @@
+// Este script de TradingView fue creado por Purificación Santana
+// © Purificación Santana
+//@version=6
+indicator("MonarcaBand", overlay=true, max_lines_count=500)
+
+// Parámetros
+triggerMAType = input.string("SMA", "Trigger MA Type", options=["EMA", "HMA", "SMA", "TMA", "WMA", "DEMA", "TEMA", "VWMA", "ZLEMA", "LinReg"], group="Parameters")
+triggerPeriod = input.int(12, "Trigger Period", minval=1, group="Parameters")
+averageMAType = input.string("SMA", "Average MA Type", options=["EMA", "HMA", "SMA", "TMA", "WMA", "DEMA", "TEMA", "VWMA", "ZLEMA", "LinReg"], group="Parameters")
+averagePeriod = input.int(12, "Average Period", minval=1, group="Parameters")
+
+// Opciones
+colorLines = input.string("RegionColors", "Color Lines", options=["Transparent", "RegionColors", "CustomColors", "PlotColors"], group="Options")
+drawArrows = input.bool(true, "Draw Arrows", group="Options")
+arrowOffset = input.int(10, "Arrow Offset", minval=1, group="Options")
+arrowUpColor = input.color(color.rgb(30, 100, 7), "Arrow Up Color", group="Options") // Cyan
+arrowDownColor = input.color(color.rgb(233, 27, 27), "Arrow Down Color", group="Options") // Magenta
+colorRegion = input.bool(true, "Color Region", group="Options")
+regionOpacity = input.int(30, "Region Opacity", minval=0, maxval=100, group="Options")
+regionUpColor = input.color(color.new(#119148, 70), "Region Up Color", group="Options") // PaleTurquoise
+regionDownColor = input.color(color.new(#870d22, 70), "Region Down Color", group="Options") // Pink
+soundAlert = input.bool(false, "Sound Alert", group="Options")
+drawDottedLine = input.bool(true, "Draw Dotted Line", group="Options")
+dottedLinePipsRange = input.int(2000, "Dotted Line Pips Range", group="Options")
+
+// Colores personalizados
+triggerRisingColor = input.color(color.lime, "Trigger Rising Color", group="Custom Colors")
+triggerFallingColor = input.color(color.yellow, "Trigger Falling Color", group="Custom Colors")
+averageRisingColor = input.color(#00FFFF, "Average Rising Color", group="Custom Colors") // Cyan
+averageFallingColor = input.color(color.red, "Average Falling Color", group="Custom Colors")
+
+// Función para calcular MA según tipo
+getMA(series float src, simple int length, simple string maType) =>
+    switch maType
+        "EMA" => ta.ema(src, length)
+        "HMA" => ta.hma(src, length)
+        "SMA" => ta.sma(src, length)
+        "TMA" => ta.sma(ta.sma(src, length), length)
+        "WMA" => ta.wma(src, length)
+        "DEMA" => 2 * ta.ema(src, length) - ta.ema(ta.ema(src, length), length)
+        "TEMA" => 3 * ta.ema(src, length) - 3 * ta.ema(ta.ema(src, length), length) + ta.ema(ta.ema(ta.ema(src, length), length), length)
+        "VWMA" => ta.vwma(src, length)
+        "ZLEMA" => ta.ema(src + (src - src[1 + math.floor((length - 1) / 2)]), length)
+        "LinReg" => ta.linreg(src, length, 0)
+        => ta.sma(src, length)
+
+// Cálculo de las líneas
+trigger = getMA(close, triggerPeriod, triggerMAType)
+average = getMA(trigger, averagePeriod, averageMAType)
+
+// Determinar tendencia
+upTrend = trigger > average
+
+// Colores de las líneas
+triggerColor = colorLines == "Transparent" ? na : 
+               colorLines == "CustomColors" ? (trigger > trigger[1] ? triggerRisingColor : triggerFallingColor) :
+               colorLines == "RegionColors" ? (upTrend[1] ? regionUpColor : regionDownColor) : color.green
+               
+averageColor = colorLines == "Transparent" ? na : 
+               colorLines == "CustomColors" ? (average > average[1] ? averageRisingColor : averageFallingColor) :
+               colorLines == "RegionColors" ? (upTrend[1] ? regionUpColor : regionDownColor) : color.red
+
+// Plotear líneas
+p1 = plot(trigger, "Trigger", color=triggerColor, linewidth=2)
+p2 = plot(average, "Average", color=averageColor, linewidth=2)
+
+// Región coloreada
+fillColor = upTrend ? regionUpColor : regionDownColor
+fill(p1, p2, color=colorRegion ? fillColor : na, title="Region")
+
+// Detectar cruces
+crossUp = ta.crossover(trigger, average)
+crossDown = ta.crossunder(trigger, average)
+
+// Offset en ticks
+arrowTickOffset = arrowOffset * syminfo.mintick
+
+// Type para almacenar información de líneas
+type LineInfo
+    line id
+    float price
+    bool isUp
+
+// Variables para almacenar líneas activas
+var array<LineInfo> activeLines = array.new<LineInfo>()
+
+// Actualizar y verificar líneas existentes en cada tick
+if array.size(activeLines) > 0
+    for i = array.size(activeLines) - 1 to 0
+        lineInfo = array.get(activeLines, i)
+        linePrice = lineInfo.price
+        
+        // Verificar si el precio tocó la línea
+        lineTouched = lineInfo.isUp ? (low[1] <= linePrice) : (high[1] >= linePrice)
+        
+        if lineTouched
+            // Detener la línea en la barra anterior
+            line.set_x2(lineInfo.id, bar_index - 1)
+            array.remove(activeLines, i)
+        else
+            // Extender la línea
+            line.set_x2(lineInfo.id, bar_index)
+
+// Dibujar flechas y líneas punteadas en cruces
+if drawArrows and crossUp
+    arrowBasePrice = average[1] - arrowTickOffset
+    label.new(bar_index[1], arrowBasePrice, "▲", color=color.new(arrowUpColor, 0), textcolor=arrowUpColor, style=label.style_none, size=size.small)
+    
+    if drawDottedLine
+        pipsRange = dottedLinePipsRange * syminfo.mintick
+        if math.abs(close - arrowBasePrice) <= pipsRange
+            newLine = line.new(bar_index[1], arrowBasePrice, bar_index, arrowBasePrice, color=arrowUpColor, style=line.style_dotted, width=2)
+            array.push(activeLines, LineInfo.new(newLine, arrowBasePrice, true))
+
+if drawArrows and crossDown
+    arrowBasePrice = average[1] + arrowTickOffset
+    label.new(bar_index[1], arrowBasePrice, "▼", color=color.new(arrowDownColor, 0), textcolor=arrowDownColor, style=label.style_none, size=size.small)
+    
+    if drawDottedLine
+        pipsRange = dottedLinePipsRange * syminfo.mintick
+        if math.abs(close - arrowBasePrice) <= pipsRange
+            newLine = line.new(bar_index[1], arrowBasePrice, bar_index, arrowBasePrice, color=arrowDownColor, style=line.style_dotted, width=2)
+            array.push(activeLines, LineInfo.new(newLine, arrowBasePrice, false))
+
+// Alertas
+if soundAlert and crossUp
+    alert("Trigger cruzó por encima de Average", alert.freq_once_per_bar)
+    
+if soundAlert and crossDown
+    alert("Trigger cruzó por debajo de Average", alert.freq_once_per_bar)
+
+// Alertas condicionales para crear
+alertcondition(crossUp, "Cross Up", "Trigger cruzó por encima de Average")
+alertcondition(crossDown, "Cross Down", "Trigger cruzó por debajo de Average")

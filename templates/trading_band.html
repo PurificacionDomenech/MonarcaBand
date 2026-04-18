@@ -438,7 +438,7 @@ function renderPrice(d){
           x:[...segTx, ...[...segAx].reverse()],
           y:[...segTy, ...[...segAy].reverse()],
           fill:'toself',
-          fillcolor: bull ? 'rgba(0,200,90,.40)' : 'rgba(210,45,75,.40)',
+          fillcolor: bull ? 'rgba(17,145,72,.35)' : 'rgba(135,13,34,.35)',
           line:{width:0}
         });
       }
@@ -461,15 +461,16 @@ function renderPrice(d){
     for(let i=0;i<times.length;i++){const d=Math.abs(times[i]-ms);if(d<bd){bd=d;bi=i;}}
     return vals[bi]??null;
   }
-  const mkCross=(arr,sym,col,nm)=>{
+  // Pine Script: arrow at average[1] (±small offset below/above)
+  const mkCross=(arr,sym,col,nm,isUp)=>{
     const pts=arr.map(s=>{
-      const tv=nearestVal(trigTimes,trigVals,s.x)??s.price;
       const av=nearestVal(avgTimes,avgVals,s.x)??s.price;
-      return {x:new Date(s.x), y:(tv+av)/2};
+      const off = av * (isUp ? -0.0012 : 0.0012);
+      return {x:new Date(s.x), y: av + off};
     });
     return {type:'scatter',name:nm,mode:'markers',
       x:pts.map(p=>p.x), y:pts.map(p=>p.y),
-      marker:{symbol:sym,color:col,size:12,line:{color:'rgba(0,0,0,.5)',width:1}},
+      marker:{symbol:sym,color:col,size:13,line:{color:'rgba(0,0,0,.4)',width:1}},
       hovertemplate:nm+': %{y:.4f}<extra></extra>'};
   };
   const es={type:'scatter',name:d.ema_short_name,
@@ -513,8 +514,8 @@ function renderPrice(d){
   el2.innerHTML = '';
   Plotly.newPlot(el2,
     [...segFills, candles, trg, avg, es, el,
-     mkCross(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#00e676','▲ Alcista'),
-     mkCross(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#ff1744','▼ Bajista')],
+     mkCross(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#1eca47','▲ Alcista', true),
+     mkCross(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#e91b1b','▼ Bajista', false)],
     layout,
     {responsive:true,displayModeBar:true,modeBarButtonsToRemove:['select2d','lasso2d'],displaylogo:false}
   );
@@ -562,7 +563,7 @@ function renderRsi(d){
   const pivMarkers = Object.values(pivGroups).map(g=>({
     type:'scatter', mode:'markers', x:g.x, y:g.y,
     marker:{color:dc(g.type,g.level), size:g.level===1?8:g.level===2?6:5,
-      symbol:(g.type==='bull'||g.type==='hbull')?'triangle-up':'triangle-down'},
+      symbol:'circle', line:{color:'rgba(0,0,0,.3)',width:1}},
     showlegend:false, hoverinfo:'skip'
   }));
 
