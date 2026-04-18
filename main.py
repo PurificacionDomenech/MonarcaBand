@@ -1255,13 +1255,19 @@ async def telegram_webhook(request: Request):
 
 
 @app.get("/")
-async def splash():
-    return FileResponse("templates/trading_band_splash.html")
+async def root():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/app")
 
 
 @app.get("/app")
 async def dashboard():
     return FileResponse("templates/trading_band.html")
+
+
+@app.get("/welcome")
+async def splash():
+    return FileResponse("templates/trading_band_splash.html")
 
 
 @app.get("/matrix")
