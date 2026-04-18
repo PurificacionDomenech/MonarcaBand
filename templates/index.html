@@ -151,7 +151,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
     </svg>
     <span id="hdr-brand">TRADING<span class="x">B</span>AND</span>
-    <span class="hbadge">4H · MONARCABAND</span>
+    <span class="hbadge">RANGO · MONARCABAND</span>
     <div class="hsep"></div>
     <div id="hdr-search">
       <input id="symbolInput" type="text" placeholder="^DJI · GC=F · BTC-USD · AAPL…" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()">
@@ -320,7 +320,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
     <div class="card" id="cc">
       <div id="tv-bar">
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-family:var(--fd);font-size:8px;font-weight:700;color:rgba(0,255,65,.25);text-transform:uppercase;letter-spacing:.12em">GRÁFICO 4H</span>
+          <span id="chart-bar-label" style="font-family:var(--fd);font-size:8px;font-weight:700;color:rgba(0,255,65,.25);text-transform:uppercase;letter-spacing:.12em">GRÁFICO RANGO</span>
           <button onclick="toggleChart()" id="btnTC" style="font-family:var(--fm);font-size:9px;padding:3px 9px;border-radius:4px;border:1px solid rgba(0,255,65,.15);background:rgba(0,255,65,.03);color:rgba(0,255,65,.4);cursor:pointer;letter-spacing:.04em">▼ ABRIR GRÁFICO</button>
         </div>
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
@@ -348,7 +348,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
         </div>
         <div id="lw">
           <div class="spin"></div>
-          <span style="font-family:var(--fm);font-size:11px;color:rgba(0,255,65,.4);letter-spacing:.08em">CARGANDO 4H…</span>
+          <span style="font-family:var(--fm);font-size:11px;color:rgba(0,255,65,.4);letter-spacing:.08em">CARGANDO RANGO…</span>
         </div>
         <div>
           <div id="plotDiv"></div>
@@ -803,6 +803,7 @@ async function loadSym(s){
     if(data.error)throw new Error(data.error);
     lastData=data;
     document.getElementById('lw').style.display='none';
+    if(data.bar_type){const lbl=document.getElementById('chart-bar-label');if(lbl)lbl.textContent='GRÁFICO '+data.bar_type.toUpperCase();}
     if(document.getElementById('chartBody').style.display!=='none')renderP(data);
     updateSB(data);renderCA();renderBand(data.tb_last);
   }catch(e){document.getElementById('lw').style.display='none';toast('> ERROR: '+e.message,'bearish')}

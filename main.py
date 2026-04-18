@@ -11,10 +11,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
-    from trading_band_routes import router as tb_router
+    from trading_band_routes import router as tb_router, build_range_bars as _build_rb, TB_CONFIG as _TB_CFG
     HAS_TB = True
 except Exception as _tb_err:
     HAS_TB = False
+    _build_rb = None
+    _TB_CFG = {}
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -1432,14 +1434,31 @@ async def save_notif_prefs(request: Request):
 @app.get("/api/chart/{ticker}")
 async def get_chart(ticker: str):
     try:
-        cfg = get_cfg(ticker)
+        sym = ticker.upper()
+        cfg = get_cfg(sym)
         es, el = cfg["ema_short"], cfg["ema_long"]
-        df = await async_download(
-            ticker.upper(), period="2y", interval="4h", progress=False
-        )
+        tb_cfg = _TB_CFG.get(sym, _TB_CFG.get("_default", {}))
+        range_size = tb_cfg.get("range", 0)
+
+        use_rb = HAS_TB and _build_rb is not None and range_size > 0
+        if use_rb:
+            df_raw = await async_download(sym, period="60d", interval="5m", progress=False)
+            df = clean_df(df_raw)
+            df.columns = [c.lower() for c in df.columns]
+            df_rb = _build_rb(df, range_size)
+            if df_rb is not None and not df_rb.empty:
+                df = df_rb.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close","volume":"Volume"})
+                bar_type = f"Rango {range_size}"
+            else:
+                df.columns = [c.capitalize() for c in df.columns]
+                bar_type = "5m"
+        else:
+            df = await async_download(sym, period="2y", interval="4h", progress=False)
+            df = clean_df(df)
+            bar_type = "4h"
+
         if df.empty:
             return {"error": "Simbolo no encontrado: " + ticker}
-        df = clean_df(df)
         df = calc_indicators(df, es, el)
         df = calc_trading_band(df)
         ult = float(df["Close"].iloc[-1])
@@ -1515,9 +1534,10 @@ async def get_chart(ticker: str):
             "change_pct": (ult - first) / first * 100,
             "rsi_current": float(rsi_s.iloc[-1]) if not rsi_s.empty else 50,
             "alertas": detect_alerts(
-                df, ticker=ticker.upper(), ema_short=es, ema_long=el, cfg=cfg
+                df, ticker=sym, ema_short=es, ema_long=el, cfg=cfg
             ),
             "asset_config": {"ema_short": es, "ema_long": el},
+            "bar_type": bar_type,
         }
     except Exception as e:
         return {"error": str(e)}
