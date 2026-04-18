@@ -13,7 +13,7 @@
 html,body{height:100%;overflow-x:hidden}
 :root{
   --teal:#00c896;--teal-dim:rgba(0,200,150,.10);--teal-glow:rgba(0,200,150,.20);
-  --bull:#00e676;--bear:#ff1744;--hbull:#29b6f6;--hbear:#ff9800;
+  --bull:#00e676;--bear:#ff1744;--hbull:#00bcd4;--hbear:#ff9800;
   --bg:#030d0a;--bg2:#060f0c;--bdr:rgba(0,200,150,.14);--bdr2:rgba(0,200,150,.07);
   --text:#c8f0e4;--muted:rgba(200,240,228,.35);
   --ff:'Rajdhani',sans-serif;--fb:'Space Grotesk',sans-serif;--fm:'Share Tech Mono',monospace;
@@ -296,10 +296,10 @@ select option{background:#030d0a}
 <script>
 const API = window.API_BASE || '';
 const COLORS = {
-  bull:  {1:'#00E676', 2:'rgba(0,230,118,.55)', 3:'rgba(0,230,118,.30)'},
-  bear:  {1:'#FF1744', 2:'rgba(255,23,68,.55)',  3:'rgba(255,23,68,.30)'},
-  hbull: {1:'#29B6F6', 2:'rgba(41,182,246,.55)', 3:'rgba(41,182,246,.30)'},
-  hbear: {1:'#FF9800', 2:'rgba(255,152,0,.55)',  3:'rgba(255,152,0,.30)'},
+  bull:  {1:'#00E676', 2:'rgba(0,230,118,.60)', 3:'rgba(0,230,118,.35)'},
+  bear:  {1:'#FF1744', 2:'rgba(255,23,68,.60)',  3:'rgba(255,23,68,.35)'},
+  hbull: {1:'#00BCD4', 2:'rgba(0,188,212,.60)', 3:'rgba(0,188,212,.35)'},
+  hbear: {1:'#FF9800', 2:'rgba(255,152,0,.60)',  3:'rgba(255,152,0,.35)'},
 };
 const DLABELS = {
   bull:'▲ D+ Alcista Regular', bear:'▼ D- Bajista Regular',
@@ -536,34 +536,43 @@ function renderRsi(d){
   const obDot={type:'scatter',mode:'markers',x:obX,y:obY,marker:{color:'rgba(255,23,68,.5)',size:3},showlegend:false,hoverinfo:'skip'};
   const osDot={type:'scatter',mode:'markers',x:osX,y:osY,marker:{color:'rgba(0,230,118,.5)',size:3},showlegend:false,hoverinfo:'skip'};
 
-  // Segmentos de divergencia
-  const groups={};
-  segs.forEach(s=>{
-    const k=s.type+'_'+s.level;
-    if(!groups[k]) groups[k]={type:s.type,level:s.level,x:[],y:[]};
-    groups[k].x.push(new Date(s.x1),new Date(s.x2),null);
-    groups[k].y.push(s.y1,s.y2,null);
-  });
-  const divTraces = Object.values(groups).map(g=>({
-    type:'scatter', name:DLABELS[g.type]+' N'+g.level,
-    x:g.x, y:g.y, mode:'lines',
-    line:{color:dc(g.type,g.level), width:g.level===1?2.5:g.level===2?1.8:1.2,
-      dash:(g.type==='hbull'||g.type==='hbear')?'dash':'solid'},
-    connectgaps:false, hoverinfo:'skip', showlegend:false
+  // ── Divergencias: líneas sutiles + puntos coloreados (fiel al Pine Script) ──
+  // Líneas conectoras muy tenues (solo referencia visual)
+  const divLines = segs.map(s=>({
+    type:'scatter', mode:'lines',
+    x:[new Date(s.x1), new Date(s.x2)],
+    y:[s.y1, s.y2],
+    line:{
+      color: dc(s.type, s.level),
+      width: s.level===1 ? 1.4 : s.level===2 ? 0.9 : 0.6,
+      dash: (s.type==='hbull'||s.type==='hbear') ? 'dash' : 'solid'
+    },
+    opacity: s.level===1 ? 0.65 : s.level===2 ? 0.40 : 0.22,
+    showlegend:false, hoverinfo:'skip'
   }));
 
-  // Marcadores en los vértices
-  const pivGroups={};
+  // Pivote confirmado (x2) — círculo sólido prominente (como plot() linewidth=3 del Pine Script)
+  const dotConf={}, dotRef={};
   segs.forEach(s=>{
-    if(!pivGroups[s.type]) pivGroups[s.type]={x:[],y:[],type:s.type,level:s.level};
-    pivGroups[s.type].x.push(new Date(s.x1),new Date(s.x2));
-    pivGroups[s.type].y.push(s.y1,s.y2);
-    pivGroups[s.type].level = Math.min(pivGroups[s.type].level||3,s.level);
+    const k=s.type+'_'+s.level;
+    if(!dotConf[k]) dotConf[k]={type:s.type,level:s.level,x:[],y:[]};
+    dotConf[k].x.push(new Date(s.x2)); dotConf[k].y.push(s.y2);
+    if(!dotRef[k]) dotRef[k]={type:s.type,level:s.level,x:[],y:[]};
+    dotRef[k].x.push(new Date(s.x1)); dotRef[k].y.push(s.y1);
   });
-  const pivMarkers = Object.values(pivGroups).map(g=>({
+  const SZ_CONF={1:11,2:8,3:6}, SZ_REF={1:7,2:5,3:4};
+  const confDots = Object.values(dotConf).map(g=>({
     type:'scatter', mode:'markers', x:g.x, y:g.y,
-    marker:{color:dc(g.type,g.level), size:g.level===1?8:g.level===2?6:5,
-      symbol:'circle', line:{color:'rgba(0,0,0,.3)',width:1}},
+    name: DLABELS[g.type]+' N'+g.level,
+    marker:{color:dc(g.type,g.level), size:SZ_CONF[Math.min(g.level,3)],
+      symbol:'circle', line:{color:'rgba(0,0,0,.5)',width:1.5}},
+    showlegend:false,
+    hovertemplate:DLABELS[g.type]+' N'+g.level+' · RSI: %{y:.1f}<extra></extra>'
+  }));
+  const refDots = Object.values(dotRef).map(g=>({
+    type:'scatter', mode:'markers', x:g.x, y:g.y,
+    marker:{color:dc(g.type,g.level), size:SZ_REF[Math.min(g.level,3)],
+      symbol:'circle-open', line:{color:dc(g.type,g.level),width:1.5}},
     showlegend:false, hoverinfo:'skip'
   }));
 
@@ -626,7 +635,7 @@ function renderRsi(d){
   const rsiMarkers = [obMark, osMark].filter(Boolean);
 
   const rel = document.getElementById('rsi-chart');
-  Plotly.newPlot(rel, [rsiLine, obDot, osDot, ...divTraces, ...pivMarkers, ...rsiMarkers], layout,
+  Plotly.newPlot(rel, [rsiLine, obDot, osDot, ...divLines, ...refDots, ...confDots, ...rsiMarkers], layout,
     {responsive:true,displayModeBar:false});
 
   // Sincronizar zoom con gráfico principal
