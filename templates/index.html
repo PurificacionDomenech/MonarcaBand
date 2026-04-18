@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>The Matrix Lab</title>
+<title>Trading Band</title>
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="apple-touch-icon" href="/static/favicon.png">
 <link rel="manifest" href="/static/manifest.json">
@@ -146,12 +146,12 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
 
 <div id="app">
   <div id="hdr">
-    <div id="hdr-logo"><img src="/static/logo.jpg" alt="" onerror="this.style.display='none'"></div>
+    <div id="hdr-logo"><img src="/static/trading_band_logo.png" alt="" onerror="this.style.display='none'"></div>
     <svg width="12" height="12" fill="none" stroke="rgba(0,255,65,.4)" viewBox="0 0 24 24" style="flex-shrink:0">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
     </svg>
-    <span id="hdr-brand">THE&nbsp;MATRI<span class="x">X</span>&nbsp;LAB</span>
-    <span class="hbadge">4H · FRACTALES</span>
+    <span id="hdr-brand">TRADING<span class="x">B</span>AND</span>
+    <span class="hbadge">4H · MONARCABAND</span>
     <div class="hsep"></div>
     <div id="hdr-search">
       <input id="symbolInput" type="text" placeholder="^DJI · GC=F · BTC-USD · AAPL…" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()">
@@ -180,8 +180,12 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
       </div>
 
       <div class="card" id="fw">
-        <div class="fw-title">⬡ NIVELES PRÓXIMOS</div>
-        <div id="fl"><div style="font-family:var(--fm);font-size:10px;color:rgba(0,255,65,.2)">Carga un activo…</div></div>
+        <div class="fw-title">◈ MONARCABAND</div>
+        <div id="fl">
+          <div class="frac-row" style="border-bottom:none"><span class="frac-tag minor" id="tb-trigger-lbl">TRIGGER</span><span id="tb-trigger-val" style="font-family:var(--fm);font-size:9px;color:rgba(0,255,65,.4)">—</span></div>
+          <div class="frac-row" style="border-bottom:none"><span class="frac-tag minor" id="tb-average-lbl">AVERAGE</span><span id="tb-average-val" style="font-family:var(--fm);font-size:9px;color:rgba(0,255,65,.4)">—</span></div>
+          <div style="margin-top:6px;text-align:center" id="tb-signal-box"><span style="font-family:var(--fm);font-size:10px;color:rgba(0,255,65,.2)">Carga un activo…</span></div>
+        </div>
       </div>
 
       <div id="alertBox" class="card">
@@ -306,7 +310,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
         </div>
         <div id="wbody" class="acc closed">
           <div style="height:8px"></div>
-          <div id="wempty" style="font-family:var(--fm);font-size:10px;line-height:1.6;color:rgba(0,255,65,.2)">Marca ★ en cualquier activo.<br>Alertas de EMA y fractales.</div>
+          <div id="wempty" style="font-family:var(--fm);font-size:10px;line-height:1.6;color:rgba(0,255,65,.2)">Marca ★ en cualquier activo.<br>Alertas de EMA y MonarcaBand.</div>
           <div id="wal"></div>
           <div id="wcnt" style="font-family:var(--fm);font-size:9px;margin-top:5px;color:rgba(0,255,65,.3)"></div>
         </div>
@@ -330,11 +334,10 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <span style="font-family:var(--fd);font-size:7px;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,65,.18);font-weight:700;margin-right:3px">IND:</span>
           <button class="bi" id="t-eS" style="background:rgba(30,144,255,.08);color:#4d9fff;border-color:rgba(30,144,255,.22)" onclick="tInd('emaS')">EMA 200</button>
           <button class="bi" id="t-eL" style="background:var(--gdim);color:var(--g);border-color:rgba(0,255,65,.22)" onclick="tInd('emaL')">EMA 800</button>
-          <button class="bi" id="t-fr" style="background:rgba(255,200,0,.06);color:#ffcc00;border-color:rgba(255,200,0,.18)" onclick="tInd('frac')">Fractales</button>
-          <button class="bi" id="t-zo" style="background:rgba(255,130,0,.05);color:#ff9900;border-color:rgba(255,130,0,.15)" onclick="tInd('zone')">Zonas</button>
+          <button class="bi" id="t-bd" style="background:rgba(240,165,0,.08);color:#f0a500;border-color:rgba(240,165,0,.22)" onclick="tInd('band')">◈ Banda</button>
           <button class="bi" id="t-op" style="background:var(--gdim);color:rgba(0,255,65,.55);border-color:rgba(0,255,65,.15)" onclick="tInd('open')">Apert.</button>
           <button class="bi" id="t-rs" style="background:rgba(255,0,51,.08);color:#ff4455;border-color:rgba(255,0,51,.22)" onclick="tInd('rsi')">RSI</button>
-          <button class="bi" id="t-ft" style="background:var(--gdim);color:var(--g);border-color:rgba(0,255,65,.2)" onclick="tInd('ftm')">⬡ Toques</button>
+          <button class="bi" id="t-cx" style="background:var(--gdim);color:var(--g);border-color:rgba(0,255,65,.2)" onclick="tInd('crosses')">↕ Cruces</button>
           <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
             <button class="bi" onclick="zC(1.2)" style="background:var(--gdim);color:rgba(0,255,65,.6);padding:3px 10px;font-size:13px">+</button>
             <button class="bi" onclick="zC(.8)" style="background:var(--gdim);color:rgba(0,255,65,.6);padding:3px 10px;font-size:13px">−</button>
@@ -380,7 +383,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
             <tr>
               <th>★ ACTIVO</th><th class="r">PRECIO</th><th class="r">CAMBIO %</th>
               <th class="c">RSI 14</th><th class="c">EMAs</th><th class="c">CRUCE</th>
-              <th class="c">⬡ FRACTAL</th><th class="c">ESTADO</th>
+              <th class="c">◈ BANDA</th><th class="c">ESTADO</th>
             </tr>
           </thead>
           <tbody id="tb"></tbody>
@@ -391,7 +394,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <div style="background:rgba(201,168,76,0.05); border:1px solid rgba(201,168,76,0.2); border-radius:10px; padding:16px; color:#ffffff; font-size:12px; line-height:1.6; text-align:center;">
             <strong style="color:#e8c96d; display:block; margin-bottom:6px; font-size:13px; text-transform:uppercase; letter-spacing:1px; font-weight:800;">⚠️ Aviso Legal</strong>
             <span style="display:inline-block; max-width:600px; opacity:0.9;">
-              The Matrix Lab es una herramienta de análisis técnico automatizado. Los datos y alertas mostrados son meramente informativos y representan momentos que identificamos como técnicamente favorables según nuestros algoritmos.
+              Trading Band es una herramienta de análisis técnico automatizado. Los datos y alertas mostrados son meramente informativos y representan momentos que identificamos como técnicamente favorables según nuestros algoritmos.
               <br><br>
               No somos asesores financieros ni recomendamos inversiones específicas.
               <br><br>
@@ -504,7 +507,7 @@ const AA=[
 
 let sym='^DJI',favsOpen=true;
   let rowScores={}, spkCache={}; 
-let ind={emaS:true,emaL:true,frac:true,zone:true,open:true,rsi:true,ftm:true};
+let ind={emaS:true,emaL:true,band:true,open:true,rsi:true,crosses:true};
 let lastData=null,wl=new Set(),abt={},shown=new Set(),xR=null,wpOpen=false;
 
 function sWL(){try{localStorage.setItem('tml3',JSON.stringify([...wl]))}catch(e){}}
@@ -665,12 +668,9 @@ async function loadRow(t){
     }
     const fe=document.getElementById(`tft-${id}`);
     if(fe){
-      if(d.fractal_touch){
-        const iM=d.fractal_is_major,iS=d.fractal_tipo==='soporte';
-        const cls=iM?(iS?'maj-s':'maj-r'):(iS?'min-s':'min-r');
-        const icon=iS?'▲':'▼';
-        const title=`${iM?'MAYOR':'menor'} · ${d.fractal_tipo}${d.fractal_crosses?' · CRUZA':''}`;
-        fe.innerHTML=`<span class="ftag ${cls}" title="${title}">⬡ ${icon} ${fmtP(d.fractal_price)}</span>`;
+      if(d.tb_signal&&d.tb_signal!=='neutral'){
+        const bull=d.tb_signal==='bull';
+        fe.innerHTML=`<span class="ftag ${bull?'maj-s':'maj-r'}">◈ ${bull?'▲ ALCISTA':'▼ BAJISTA'}</span>`;
       }else{fe.innerHTML='<span class="ftag none">—</span>'}
     }
     const se=document.getElementById(`tes-${id}`);
@@ -691,7 +691,7 @@ function calcEstado(d){
   let pts=0,s=3;
   if(d.rsi!=null){if(d.rsi<30)pts+=1;else if(d.rsi>70)pts+=1}
   if(d.ema_short!=null&&d.ema_long!=null){if(d.ema_short>d.ema_long)pts+=1}
-  if(d.fractal_touch&&d.fractal_tipo==='soporte')pts+=1;
+  if(d.tb_signal==='bull')pts+=1;
   if(pts>=4){s=0}else if(pts===3){s=1}else if(pts===2){s=2}else{s=3}
   if(d.ticker)rowScores[d.ticker]=s;
   const labels=['FAVORABLE','INTERESANTE','CONSIDERAR','NO AHORA'];
@@ -775,17 +775,20 @@ function renderWP(){
 }
 const rt=ts=>{const d=Date.now()-ts;if(d<60000)return'ahora';if(d<3600000)return`${Math.floor(d/60000)}m`;if(d<86400000)return`${Math.floor(d/3600000)}h`;return`${Math.floor(d/86400000)}d`};
 
-function renderFL(fr,pr){
-  const el=document.getElementById('fl');
-  if(!fr||!fr.levels){el.innerHTML='<div style="font-family:var(--fm);font-size:10px;color:rgba(0,255,65,.2)">Sin datos</div>';return}
-  const lvls=fr.levels;
-  const ab=lvls.filter(l=>l.price>pr).sort((a,b)=>a.price-b.price).slice(0,4);
-  const be=lvls.filter(l=>l.price<=pr).sort((a,b)=>b.price-a.price).slice(0,4);
-  let h='';
-  ab.reverse().forEach(l=>{const d=((l.price-pr)/pr*100).toFixed(2);h+=`<div class="frac-row"><span class="frac-tag ${l.is_major?'major':'minor'}">${l.is_major?'◆':'◇'} ${l.price.toLocaleString('es-ES',{maximumFractionDigits:2})}</span><span style="font-family:var(--fm);font-size:9px;color:#00ff41">+${d}%</span></div>`});
-  h+=`<div style="padding:3px 0;text-align:center;font-family:var(--fm);font-size:9px;color:var(--r);text-shadow:0 0 8px rgba(255,0,51,.4);border-top:1px solid rgba(255,0,51,.12);border-bottom:1px solid rgba(255,0,51,.12);margin:2px 0">● ${fmtP(pr)}</div>`;
-  be.forEach(l=>{const d=(((pr-l.price)/pr)*100).toFixed(2);h+=`<div class="frac-row"><span class="frac-tag ${l.is_major?'major':'minor'}">${l.is_major?'◆':'◇'} ${l.price.toLocaleString('es-ES',{maximumFractionDigits:2})}</span><span style="font-family:var(--fm);font-size:9px;color:#ff3333">-${d}%</span></div>`});
-  el.innerHTML=h;
+function renderBand(tb){
+  const box=document.getElementById('tb-signal-box');
+  const tv=document.getElementById('tb-trigger-val');
+  const av=document.getElementById('tb-average-val');
+  if(!tb||!tb.trigger){
+    if(box)box.innerHTML='<span style="font-family:var(--fm);font-size:10px;color:rgba(0,255,65,.2)">Sin datos</span>';
+    return;
+  }
+  if(tv)tv.innerText=fmtP(tb.trigger);
+  if(av)av.innerText=fmtP(tb.average);
+  const bull=tb.signal==='bull';
+  if(box)box.innerHTML=bull
+    ?`<span style="font-family:var(--fm);font-size:11px;color:#00ff41;text-shadow:0 0 8px rgba(0,255,65,.5)">▲ ALCISTA</span>`
+    :`<span style="font-family:var(--fm);font-size:11px;color:#ff4455;text-shadow:0 0 8px rgba(255,0,51,.4)">▼ BAJISTA</span>`;
 }
 
 async function loadSym(s){
@@ -800,7 +803,7 @@ async function loadSym(s){
     lastData=data;
     document.getElementById('lw').style.display='none';
     if(document.getElementById('chartBody').style.display!=='none')renderP(data);
-    updateSB(data);renderCA();renderFL(data.fractales,data.last_price);
+    updateSB(data);renderCA();renderBand(data.tb_last);
   }catch(e){document.getElementById('lw').style.display='none';toast('> ERROR: '+e.message,'bearish')}
 }
 function renderCA(){
@@ -904,12 +907,16 @@ function renderP(apiData){
     if(ros.length)traces.push({x:ros.map(p=>new Date(p.x)),y:ros.map(p=>p.y),type:'scatter',mode:'markers',name:'RSI<30',marker:{color:'#00ff41',size:11,symbol:'triangle-up',line:{color:'#000',width:1.5}},hovertemplate:'▲ RSI Sobreventa<br>$%{y:,.2f}<extra></extra>'});
     if(rob.length)traces.push({x:rob.map(p=>new Date(p.x)),y:rob.map(p=>p.y),type:'scatter',mode:'markers',name:'RSI>70',marker:{color:'#ff0033',size:11,symbol:'triangle-down',line:{color:'#000',width:1.5}},hovertemplate:'▼ RSI Sobrecompra<br>$%{y:,.2f}<extra></extra>'});
   }
-  if(ind.frac&&fr.levels){
-    const xS=dates[0],xE=dates[dates.length-1];
-    fr.levels.forEach(l=>{shapes.push({type:'line',xref:'x',yref:'y',x0:xS,x1:xE,y0:l.price,y1:l.price,line:{color:l.is_major?'rgba(0,255,65,.4)':'rgba(0,255,65,.15)',width:l.is_major?1.5:1}})});
-    fr.levels.filter(l=>l.is_major).forEach(l=>{traces.push({x:[xE],y:[l.price],type:'scatter',mode:'text',name:'',text:[l.price.toLocaleString('es-ES',{maximumFractionDigits:0})],textposition:'middle right',textfont:{color:'rgba(0,255,65,.35)',size:9,family:'Share Tech Mono'},hoverinfo:'skip',showlegend:false})});
+  if(ind.band){
+    const tbd=cd.tb_trigger||[],tba=cd.tb_average||[];
+    if(tbd.length)traces.push({x:tbd.map(p=>new Date(p.x)),y:tbd.map(p=>p.y),type:'scatter',mode:'lines',name:'Trigger SMA12',line:{color:'rgba(240,165,0,.85)',width:1.5},hovertemplate:'Trigger: $%{y:,.4f}<extra></extra>'});
+    if(tba.length)traces.push({x:tba.map(p=>new Date(p.x)),y:tba.map(p=>p.y),type:'scatter',mode:'lines',name:'Average SMA12',line:{color:'rgba(240,165,0,.35)',width:2,dash:'dot'},fill:'tonexty',fillcolor:'rgba(240,165,0,.04)',hovertemplate:'Average: $%{y:,.4f}<extra></extra>'});
   }
-  if(ind.zone&&fr.levels){fr.levels.filter(l=>l.is_major).forEach(l=>{shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:l.zone_bot,y1:l.zone_top,fillcolor:'rgba(0,255,65,.025)',line:{color:'rgba(0,255,65,.1)',width:0.5}})})}
+  if(ind.crosses&&cd.tb_crosses&&cd.tb_crosses.length){
+    const cU=cd.tb_crosses.filter(p=>p.dir===1),cD=cd.tb_crosses.filter(p=>p.dir===-1);
+    if(cU.length)traces.push({x:cU.map(p=>new Date(p.x)),y:cU.map(p=>p.y*.9985),type:'scatter',mode:'markers',name:'▲ Cruce alcista',marker:{color:'#00ff41',size:10,symbol:'triangle-up',line:{color:'#000',width:1.5}},hovertemplate:'▲ Cruce alcista<br>$%{y:,.4f}<extra></extra>'});
+    if(cD.length)traces.push({x:cD.map(p=>new Date(p.x)),y:cD.map(p=>p.y*1.0015),type:'scatter',mode:'markers',name:'▼ Cruce bajista',marker:{color:'#ff0033',size:10,symbol:'triangle-down',line:{color:'#000',width:1.5}},hovertemplate:'▼ Cruce bajista<br>$%{y:,.4f}<extra></extra>'});
+  }
   if(ind.open){
     const labelIdx=Math.floor(dates.length*0.02);
     if(opens.year_open){
@@ -920,12 +927,6 @@ function renderP(apiData){
       shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:opens.week_open,y1:opens.week_open,line:{color:'rgba(0,255,160,.5)',width:1,dash:'dot'}});
       traces.push({x:[dates[labelIdx]],y:[opens.week_open],type:'scatter',mode:'text',name:'',text:['── SEMANA'],textposition:'bottom center',textfont:{color:'rgba(0,255,160,.8)',size:10,family:'Share Tech Mono'},hoverinfo:'skip',showlegend:false});
     }
-  }
-  if(ind.ftm&&cd.fractal_touch_candles&&cd.fractal_touch_candles.length){
-    const ftS=cd.fractal_touch_candles.filter(p=>p.tipo==='soporte');
-    const ftR=cd.fractal_touch_candles.filter(p=>p.tipo==='resistencia');
-    if(ftS.length)traces.push({x:ftS.map(p=>new Date(p.x)),y:ftS.map(p=>p.y*0.9982),type:'scatter',mode:'markers',name:'⬡ Soporte',marker:{color:'rgba(0,255,65,.8)',size:8,symbol:'diamond',line:{color:'rgba(0,255,65,.4)',width:1}},hovertemplate:'⬡ Toca Soporte Fractal<br>$%{y:,.2f}<extra></extra>'});
-    if(ftR.length)traces.push({x:ftR.map(p=>new Date(p.x)),y:ftR.map(p=>p.y*1.0018),type:'scatter',mode:'markers',name:'⬡ Resistencia',marker:{color:'rgba(255,0,51,.8)',size:8,symbol:'diamond',line:{color:'rgba(255,0,51,.4)',width:1}},hovertemplate:'⬡ Toca Resistencia<br>$%{y:,.2f}<extra></extra>'});
   }
   const layout={paper_bgcolor:'#000000',plot_bgcolor:'#010601',margin:{t:10,r:70,b:50,l:50},hovermode:'x unified',showlegend:false,shapes,hoverlabel:{bgcolor:'rgba(0,3,0,.96)',bordercolor:'rgba(0,255,65,.2)',font:{family:'Share Tech Mono,monospace',size:11,color:'#c8ffd4'}},xaxis:{type:'date',gridcolor:'rgba(0,255,65,.04)',linecolor:'rgba(0,255,65,.08)',tickfont:{color:'rgba(0,255,65,.3)',size:9,family:'Share Tech Mono'},showspikes:true,spikecolor:'rgba(0,255,65,.15)',spikedash:'dot',spikethickness:1,rangeslider:{visible:false}},yaxis:{gridcolor:'rgba(0,255,65,.04)',linecolor:'rgba(0,255,65,.08)',tickfont:{color:'rgba(0,255,65,.3)',size:9,family:'Share Tech Mono'},side:'right',tickformat:yFmt},dragmode:'pan',font:{family:'Share Tech Mono,monospace'}};
   const xEnd=dates[dates.length-1];
@@ -983,7 +984,7 @@ function renderRSI(cd,dates,xU){
 
 function tInd(k){
   ind[k]=!ind[k];
-  const m={'emaS':'t-eS','emaL':'t-eL','frac':'t-fr','zone':'t-zo','open':'t-op','rsi':'t-rs','ftm':'t-ft'};
+  const m={'emaS':'t-eS','emaL':'t-eL','band':'t-bd','open':'t-op','rsi':'t-rs','crosses':'t-cx'};
   document.getElementById(m[k]).classList.toggle('off',!ind[k]);
   if(lastData)renderP(lastData);
 }

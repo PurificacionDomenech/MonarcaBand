@@ -306,6 +306,23 @@ def calc_indicators(df, es=200, el=800):
     return df
 
 
+def calc_trading_band(df):
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    trigger = close.rolling(12).mean()
+    average = trigger.rolling(12).mean()
+    df["TB_TRIGGER"] = trigger
+    df["TB_AVERAGE"] = average
+    cross = pd.Series(0, index=df.index)
+    prev_t = trigger.shift(1)
+    prev_a = average.shift(1)
+    cross[(trigger > average) & (prev_t <= prev_a)] = 1
+    cross[(trigger < average) & (prev_t >= prev_a)] = -1
+    df["TB_CROSS"] = cross
+    return df
+
+
 def calc_fractales(precio, cfg, n_above=30, n_below=30):
     ks, ms, zs = cfg["key_spacing"], cfg["major_spacing"], cfg["zone_size"]
     base = round(precio / ks) * ks
@@ -1255,31 +1272,15 @@ async def telegram_webhook(request: Request):
 
 
 @app.get("/")
-async def root():
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/app")
-
-
-@app.get("/app")
-async def dashboard():
-    return FileResponse("templates/trading_band.html")
-
-
-@app.get("/welcome")
 async def splash():
-    return FileResponse("templates/trading_band_splash.html")
-
-
-@app.get("/matrix")
-async def matrix_splash():
     for name in ("Splash.html", "splash.html"):
         if os.path.exists(f"templates/{name}"):
             return FileResponse(f"templates/{name}")
     return FileResponse("templates/index.html")
 
 
-@app.get("/matrix/app")
-async def matrix_dashboard():
+@app.get("/app")
+async def dashboard():
     return FileResponse("templates/index.html")
 
 
@@ -1429,8 +1430,8 @@ async def get_chart(ticker: str):
             return {"error": "Simbolo no encontrado: " + ticker}
         df = clean_df(df)
         df = calc_indicators(df, es, el)
+        df = calc_trading_band(df)
         ult = float(df["Close"].iloc[-1])
-        fr = calc_fractales(ult, cfg)
         ts = ts_ms(df.index)
         candles = [
             {
@@ -1443,7 +1444,7 @@ async def get_chart(ticker: str):
             for i in range(len(df))
         ]
 
-        def ema_s(col):
+        def col_series(col):
             if col not in df.columns:
                 return []
             return [
@@ -1460,33 +1461,43 @@ async def get_chart(ticker: str):
                     ros.append({"x": ts[i], "y": float(df["Close"].iloc[i])})
                 elif r > 70:
                     rob.append({"x": ts[i], "y": float(df["Close"].iloc[i])})
-        ftc = []
+
+        crosses = []
         for i in range(len(df)):
-            h, l, c = (
-                safe(df["High"].iloc[i]),
-                safe(df["Low"].iloc[i]),
-                safe(df["Close"].iloc[i]),
-            )
-            if None in (h, l, c):
-                continue
-            ft = detect_fractal_touch(h, l, c, fr)
-            if ft["touch"] and ft["is_major"]:
-                ftc.append(
-                    {"x": ts[i], "y": c, "tipo": ft["tipo"], "price": ft["price"]}
-                )
+            c = df["TB_CROSS"].iloc[i]
+            if c != 0:
+                crosses.append({
+                    "x": ts[i],
+                    "y": float(df["Close"].iloc[i]),
+                    "dir": int(c),
+                })
+
+        tb_trig = col_series("TB_TRIGGER")
+        tb_avg  = col_series("TB_AVERAGE")
+
+        last_trig = float(df["TB_TRIGGER"].dropna().iloc[-1]) if df["TB_TRIGGER"].dropna().size else None
+        last_avg  = float(df["TB_AVERAGE"].dropna().iloc[-1]) if df["TB_AVERAGE"].dropna().size else None
+        tb_signal = "bull" if (last_trig and last_avg and last_trig > last_avg) else "bear" if (last_trig and last_avg) else "neutral"
+
         opens = calc_opens(df)
         rsi_s = df["RSI"].dropna()
         first = float(df["Close"].iloc[0])
         return {
             "chart": {
                 "candles": candles,
-                f"ema{es}": ema_s(f"EMA{es}"),
-                f"ema{el}": ema_s(f"EMA{el}"),
+                f"ema{es}": col_series(f"EMA{es}"),
+                f"ema{el}": col_series(f"EMA{el}"),
                 "rsi_os": ros,
                 "rsi_ob": rob,
-                "fractal_touch_candles": ftc,
+                "tb_trigger": tb_trig,
+                "tb_average": tb_avg,
+                "tb_crosses": crosses,
             },
-            "fractales": fr,
+            "tb_last": {
+                "trigger": last_trig,
+                "average": last_avg,
+                "signal": tb_signal,
+            },
             "opens": opens,
             "last_price": ult,
             "change": ult - first,
@@ -1514,6 +1525,7 @@ async def _compute_row(ticker: str) -> dict:
         return {"error": "not found"}
     df = clean_df(df)
     df = calc_indicators(df, es, el)
+    df = calc_trading_band(df)
     last, first = float(df["Close"].iloc[-1]), float(df["Close"].iloc[0])
     rsi_s = df["RSI"].dropna()
     rsi = float(rsi_s.iloc[-1]) if not rsi_s.empty else None
@@ -1524,10 +1536,13 @@ async def _compute_row(ticker: str) -> dict:
         s = df[col].dropna()
         return float(s.iloc[-1]) if not s.empty else None
 
-    fr = calc_fractales(last, cfg)
-    ft = detect_fractal_touch(
-        float(df["High"].iloc[-1]), float(df["Low"].iloc[-1]), last, fr
-    )
+    last_trig = lv("TB_TRIGGER")
+    last_avg  = lv("TB_AVERAGE")
+    if last_trig is not None and last_avg is not None:
+        tb_signal = "bull" if last_trig > last_avg else "bear"
+    else:
+        tb_signal = "neutral"
+
     opens = calc_opens(df)
     row_components_ctx = None
     if key in INDEX_COMPONENTS:
@@ -1545,11 +1560,9 @@ async def _compute_row(ticker: str) -> dict:
         "ema_long": lv(f"EMA{el}"),
         "ema_short_name": f"EMA{es}",
         "ema_long_name": f"EMA{el}",
-        "fractal_touch": ft["touch"],
-        "fractal_price": ft["price"],
-        "fractal_is_major": ft["is_major"],
-        "fractal_tipo": ft["tipo"],
-        "fractal_crosses": ft["crosses"],
+        "tb_signal": tb_signal,
+        "tb_trigger": last_trig,
+        "tb_average": last_avg,
         "confluencias_puntos": confl["puntos"] if confl else 0,
         "confluencias_estado": confl["estado"] if confl else "NO AHORA",
         "confluencias": confl["confluencias"] if confl else [],

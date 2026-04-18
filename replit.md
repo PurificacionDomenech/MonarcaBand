@@ -1,24 +1,33 @@
-# The Matrix Lab + Trading Band
+# Trading Band
 
-A multi-project financial market dashboard with real-time technical analysis built with FastAPI.
+Financial market dashboard with real-time technical analysis built with FastAPI.
 
-## Projects
+## Project: Trading Band
 
-### The Matrix Lab (/)
-Original confluence analysis engine with EMA 200/800, RSI, fractal levels, and automated alerts.
+The app has been renamed from "The Matrix Lab" to **Trading Band**. Same structure, indicator changed:
 
-### Trading Band (/trading-band)
-New project using MonarcaBand (SMA12 Trigger + SMA12 Average) + RSI with 3-level divergences.
-- **Dashboard**: `/trading-band/app`
-- **API**: `/api/tradingband/signal/{ticker}`
-- **Alerts**: trend-change arrows, RSI overbought/oversold, RSI divergences in key zones
-- **Logo**: butterfly image (static/trading_band_logo.png)
-- **Assets**: US30, NASDAQ, S&P500, Gold, Silver, Oil, USD/JPY, GBP/JPY, EUR/USD, Bitcoin
-- **Files**: `trading_band_routes.py`, `templates/trading_band.html`, `templates/trading_band_splash.html`
+### What changed
+- **Indicator**: Fractales replaced by **MonarcaBand** (SMA12 Trigger + SMA12 Average of Trigger)
+- **Name**: "The Matrix Lab" → "Trading Band" (Splash.html + index.html)
+- **Logo**: Butterfly image (`/static/trading_band_logo.png`)
+- **Chart**: Shows Trigger SMA12 (amber line) + Average SMA12 (dotted amber) + cross arrows
+- **Sidebar**: MONARCABAND panel with Trigger/Average values and ALCISTA/BAJISTA signal
+- **Table**: "◈ BANDA" column instead of "⬡ FRACTAL" with bull/bear signal per asset
+- **Buttons**: "◈ Banda" + "↕ Cruces" instead of Fractales/Zonas/Toques
+
+### What stayed the same
+- All assets (USDJPY, GBPJPY, EURUSD, AUDUSD, GC=F, SI=F, CL=F, ^DJI, ^NDX + hidden extras)
+- EMA 200/800 on chart
+- RSI 14 panel
+- Telegram + Email notification system
+- Scheduler (every 30 min)
+- Supabase authentication
+- Watchlist (★ vigilancia)
+- All route structure: `/` → Splash login, `/app` → dashboard
 
 ## Overview
 
-"The Matrix Lab" is a web application that provides:
+"Trading Band" is a web application that provides:
 - Real-time market data for stocks, indices, forex, and commodities via yfinance
 - Technical analysis: EMA 200/800, RSI, fractal levels
 - Automatic alerts via Telegram and email
