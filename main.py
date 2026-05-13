@@ -1091,6 +1091,14 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                     dia_num    = -1
                     dia_name   = ""
 
+                # Filtro de frescura: ignorar velas 4h con >1h de antigüedad
+                try:
+                    age_h = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 3600
+                    if age_h > 1:
+                        continue
+                except Exception:
+                    pass
+
                 resultado = evaluate_confluencias(
                     df_slice,
                     ticker=t.upper(),
