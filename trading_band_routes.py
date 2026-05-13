@@ -25,7 +25,10 @@ TB_CONFIG = {
     "USDJPY=X":{"range": 1,    "ema_s": 200, "ema_l": 800, "name": "USD/JPY"},
     "GBPJPY=X":{"range": 1,    "ema_s": 200, "ema_l": 800, "name": "GBP/JPY"},
     "EURUSD=X":{"range": 0.005,"ema_s": 200, "ema_l": 800, "name": "EUR/USD"},
+    "AUDUSD=X":{"range": 0.005,"ema_s": 200, "ema_l": 800, "name": "AUD/USD"},
     "BTC-USD": {"range": 1000, "ema_s": 200, "ema_l": 800, "name": "BTC · Bitcoin"},
+    "GBPUSD=X":{"range": 0.005,"ema_s": 200, "ema_l": 800, "name": "GBP/USD"},
+    "AUDJPY=X":{"range": 1,    "ema_s": 200, "ema_l": 800, "name": "AUD/JPY"},
     "_default":{"range": 50,   "ema_s": 200, "ema_l": 800, "name": "Activo"},
 }
 
@@ -439,5 +442,8 @@ async def get_tickers():
         {"id": "USDJPY=X", "name": "USD/JPY",    "group": "Forex"},
         {"id": "GBPJPY=X", "name": "GBP/JPY",   "group": "Forex"},
         {"id": "EURUSD=X", "name": "EUR/USD",    "group": "Forex"},
+        {"id": "AUDUSD=X", "name": "AUD/USD",    "group": "Forex"},
+        {"id": "GBPUSD=X", "name": "GBP/USD",    "group": "Forex"},
+        {"id": "AUDJPY=X", "name": "AUD/JPY",    "group": "Forex"},
         {"id": "BTC-USD",  "name": "Bitcoin",    "group": "Crypto"},
     ]}

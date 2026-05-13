@@ -61,6 +61,9 @@ WATCH_TICKERS = [
     "AUDUSD=X",
     "SI=F",
     "CL=F",
+    "BTC-USD",
+    "GBPUSD=X",
+    "AUDJPY=X",
 ]
 
 _sent_cache: dict = {}
@@ -148,6 +151,27 @@ ASSET_CONFIG = {
         "key_spacing": 0.005,
         "major_spacing": 0.01,
         "zone_size": 0.001,
+        "ema_short": 200,
+        "ema_long": 800,
+    },
+    "BTC-USD": {
+        "key_spacing": 1000,
+        "major_spacing": 5000,
+        "zone_size": 500,
+        "ema_short": 200,
+        "ema_long": 800,
+    },
+    "GBPUSD=X": {
+        "key_spacing": 0.005,
+        "major_spacing": 0.01,
+        "zone_size": 0.001,
+        "ema_short": 200,
+        "ema_long": 800,
+    },
+    "AUDJPY=X": {
+        "key_spacing": 1,
+        "major_spacing": 5,
+        "zone_size": 0.25,
         "ema_short": 200,
         "ema_long": 800,
     },
@@ -1212,7 +1236,7 @@ if HAS_SCHEDULER:
                 await asyncio.sleep(5)
 
     async def _warm_row_cache():
-        print("[cache] Pre-calentando datos de los 9 activos…")
+        print(f"[cache] Pre-calentando datos de los {len(WATCH_TICKERS)} activos…")
         for t in WATCH_TICKERS:
             try:
                 await _compute_row(t)
