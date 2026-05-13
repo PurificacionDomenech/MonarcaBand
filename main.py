@@ -11,12 +11,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
-    from trading_band_routes import router as tb_router, build_range_bars as _build_rb, TB_CONFIG as _TB_CFG
+    from trading_band_routes import (
+        router as tb_router,
+        build_range_bars as _build_rb,
+        TB_CONFIG as _TB_CFG,
+        detect_all_divergences as _detect_divs,
+        calc_rsi as _calc_rsi_tv,
+    )
     HAS_TB = True
 except Exception as _tb_err:
     HAS_TB = False
     _build_rb = None
     _TB_CFG = {}
+    _detect_divs = None
+    _calc_rsi_tv = None
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -67,7 +75,7 @@ WATCH_TICKERS = [
 ]
 
 _sent_cache: dict = {}
-_DEDUP_SECONDS = 4 * 3600
+_DEDUP_SECONDS = 1 * 3600  # 1 hora máximo para alertas recientes
 
 _row_cache: dict = {}
 _ROW_TTL = 300
@@ -969,12 +977,12 @@ async def scheduled_watch():
 
 
 async def daily_catchup():
-    """Catch-up al arrancar: revisa las últimas 6 velas (≈24h) y envía lo pendiente."""
+    """Catch-up al arrancar: revisa SOLO la última vela (≤4h) — nada de más de 1h atrás."""
     if not HAS_NOTIFIER:
         return
-    print("[catchup] Revisando últimas 24h de alertas…")
+    print("[catchup] Revisando vela actual (máx 1h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
-        WATCH_TICKERS, num_candles=6, label="catchup", max_per_ticker=1
+        WATCH_TICKERS, num_candles=1, label="catchup", max_per_ticker=1
     )
     if alerts_by_ticker:
         total = sum(len(v) for v in alerts_by_ticker.values())
