@@ -242,11 +242,14 @@ def build_rsi_div_segments(divs: list, rsi: pd.Series, times: list) -> list:
         bar1, bar2 = dv["bar_prev"], dv["bar"]
         if bar1 < 0 or bar2 >= len(rsi):
             continue
+        # Use millisecond timestamps (same format as rsi_points x values)
+        ts1 = int(times[bar1].timestamp() * 1000)
+        ts2 = int(times[bar2].timestamp() * 1000)
         segments.append({
             "type": dv["type"], "level": dv["level"],
             "in_zone": dv.get("in_zone", False),
-            "x1": times[bar1], "y1": float(rsi.iloc[bar1]),
-            "x2": times[bar2], "y2": float(rsi.iloc[bar2]),
+            "x1": ts1, "y1": float(rsi.iloc[bar1]),
+            "x2": ts2, "y2": float(rsi.iloc[bar2]),
         })
     return segments
 

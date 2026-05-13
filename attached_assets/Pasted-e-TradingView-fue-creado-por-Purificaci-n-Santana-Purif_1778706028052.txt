@@ -1,0 +1,405 @@
+e TradingView fue creado por Purificación Santana
+// © Purificación Santana
+//@version=6
+indicator("MonarcaBand + EMAs + RSI + Divergencias", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ==================== PARÁMETROS MONARCABAND ====================
+triggerMAType = input.string("SMA", "Trigger MA Type", options=["EMA", "HMA", "SMA", "TMA", "WMA", "DEMA", "TEMA", "VWMA", "ZLEMA", "LinReg"], group="MonarcaBand Parameters")
+triggerPeriod = input.int(12, "Trigger Period", minval=1, group="MonarcaBand Parameters")
+averageMAType = input.string("SMA", "Average MA Type", options=["EMA", "HMA", "SMA", "TMA", "WMA", "DEMA", "TEMA", "VWMA", "ZLEMA", "LinReg"], group="MonarcaBand Parameters")
+averagePeriod = input.int(12, "Average Period", minval=1, group="MonarcaBand Parameters")
+
+// ==================== PARÁMETROS EMAs ====================
+emaShortLength    = input.int(200, "EMA Corta", minval=1, group="EMAs", tooltip="US30: 200, XAUUSD: 200")
+emaLongLength     = input.int(800, "EMA Larga",  minval=1, group="EMAs", tooltip="US30: 800, XAUUSD: 800")
+showEMAs          = input.bool(true, "Mostrar EMAs", group="EMAs")
+showEMACrosses    = input.bool(true, "Mostrar Cruces EMAs", group="EMAs")
+emaShortColor     = input.color(color.blue, "Color EMA Corta", group="EMAs")
+emaLongColor      = input.color(color.new(color.green, 30), "Color EMA Larga", group="EMAs")
+emaCrossUpColor   = input.color(color.green, "Color Cruce Alcista EMA", group="EMAs")
+emaCrossDownColor = input.color(color.red,   "Color Cruce Bajista EMA",  group="EMAs")
+
+// ==================== PARÁMETROS RSI ====================
+rsiLength          = input.int(14, "Periodo RSI", minval=1, group="RSI")
+rsiOverbought      = input.int(70, "RSI Sobrecompra", minval=50, maxval=100, group="RSI")
+rsiOversold        = input.int(30, "RSI Sobreventa",  minval=0,  maxval=50,  group="RSI")
+showRsiSignals     = input.bool(true, "Mostrar Señales RSI", group="RSI")
+rsiOversoldColor   = input.color(color.green, "Color Señal Sobreventa RSI",  group="RSI")
+rsiOverboughtColor = input.color(color.red,   "Color Señal Sobrecompra RSI", group="RSI")
+
+// ==================== DIVERGENCIAS — NIVEL 1 (Corto) ====================
+g1   = "Divergencias — Nivel 1 (Corto)"
+sh1  = input.bool(true, title="Activar Nivel 1", group=g1)
+lb1L = input.int(5,    minval=1, maxval=100,  title="Lookback Izquierda",     group=g1)
+lb1R = input.int(5,    minval=1, maxval=100,  title="Lookback Derecha",        group=g1)
+rn1L = input.int(5,    minval=1, maxval=100,  title="Min Velas Entre Pivotes", group=g1)
+rn1U = input.int(50,   minval=1, maxval=2000, title="Max Velas Entre Pivotes", group=g1)
+
+// ==================== DIVERGENCIAS — NIVEL 2 (Medio) ====================
+g2   = "Divergencias — Nivel 2 (Medio)"
+sh2  = input.bool(true, title="Activar Nivel 2", group=g2)
+lb2L = input.int(10,   minval=1, maxval=100,  title="Lookback Izquierda",     group=g2)
+lb2R = input.int(10,   minval=1, maxval=100,  title="Lookback Derecha",        group=g2)
+rn2L = input.int(10,   minval=1, maxval=100,  title="Min Velas Entre Pivotes", group=g2)
+rn2U = input.int(200,  minval=1, maxval=2000, title="Max Velas Entre Pivotes", group=g2)
+
+// ==================== DIVERGENCIAS — NIVEL 3 (Largo) ====================
+g3   = "Divergencias — Nivel 3 (Largo)"
+sh3  = input.bool(true, title="Activar Nivel 3", group=g3)
+lb3L = input.int(20,   minval=1, maxval=100,  title="Lookback Izquierda",     group=g3)
+lb3R = input.int(20,   minval=1, maxval=100,  title="Lookback Derecha",        group=g3)
+rn3L = input.int(20,   minval=1, maxval=100,  title="Min Velas Entre Pivotes", group=g3)
+rn3U = input.int(1000, minval=1, maxval=2000, title="Max Velas Entre Pivotes", group=g3)
+
+// ==================== DIVERGENCIAS — VISUAL ====================
+gv            = "Divergencias — Visual"
+showBull      = input.bool(true,  title="Mostrar Divergencias Alcistas", group=gv)
+showBear      = input.bool(true,  title="Mostrar Divergencias Bajistas", group=gv)
+showHidden    = input.bool(true,  title="Mostrar Divergencias Ocultas",  group=gv)
+showDivLabels = input.bool(true,  title="Mostrar Etiquetas",             group=gv)
+divLineWidth  = input.int(2, "Grosor Líneas Divergencias", minval=1, maxval=4, group=gv)
+
+// ==================== OPCIONES MONARCABAND ====================
+colorLines          = input.string("RegionColors", "Color Lines", options=["Transparent", "RegionColors", "CustomColors", "PlotColors"], group="MonarcaBand Options")
+drawArrows          = input.bool(true,  "Draw Arrows",            group="MonarcaBand Options")
+arrowOffset         = input.int(10,     "Arrow Offset", minval=1, group="MonarcaBand Options")
+arrowUpColor        = input.color(color.rgb(30, 100, 7),  "Arrow Up Color",   group="MonarcaBand Options")
+arrowDownColor      = input.color(color.rgb(233, 27, 27), "Arrow Down Color", group="MonarcaBand Options")
+colorRegion         = input.bool(true,  "Color Region",           group="MonarcaBand Options")
+regionOpacity       = input.int(30, "Region Opacity", minval=0, maxval=100, group="MonarcaBand Options")
+regionUpColor       = input.color(color.new(#119148, 70), "Region Up Color",   group="MonarcaBand Options")
+regionDownColor     = input.color(color.new(#870d22, 70), "Region Down Color", group="MonarcaBand Options")
+soundAlert          = input.bool(false, "Sound Alert",             group="MonarcaBand Options")
+drawDottedLine      = input.bool(true,  "Draw Dotted Line",        group="MonarcaBand Options")
+dottedLinePipsRange = input.int(2000,   "Dotted Line Pips Range",  group="MonarcaBand Options")
+
+// ==================== COLORES PERSONALIZADOS ====================
+triggerRisingColor  = input.color(color.lime,   "Trigger Rising Color",  group="Custom Colors")
+triggerFallingColor = input.color(color.yellow, "Trigger Falling Color", group="Custom Colors")
+averageRisingColor  = input.color(#00FFFF,      "Average Rising Color",  group="Custom Colors")
+averageFallingColor = input.color(color.red,    "Average Falling Color", group="Custom Colors")
+
+// ==================== FUNCIÓN MA ====================
+getMA(series float src, simple int length, simple string maType) =>
+    switch maType
+        "EMA"    => ta.ema(src, length)
+        "HMA"    => ta.hma(src, length)
+        "SMA"    => ta.sma(src, length)
+        "TMA"    => ta.sma(ta.sma(src, length), length)
+        "WMA"    => ta.wma(src, length)
+        "DEMA"   => 2 * ta.ema(src, length) - ta.ema(ta.ema(src, length), length)
+        "TEMA"   => 3 * ta.ema(src, length) - 3 * ta.ema(ta.ema(src, length), length) + ta.ema(ta.ema(ta.ema(src, length), length), length)
+        "VWMA"   => ta.vwma(src, length)
+        "ZLEMA"  => ta.ema(src + (src - src[1 + math.floor((length - 1) / 2)]), length)
+        "LinReg" => ta.linreg(src, length, 0)
+        =>          ta.sma(src, length)
+
+// ==================== CÁLCULO MONARCABAND ====================
+trigger = getMA(close, triggerPeriod, triggerMAType)
+average = getMA(trigger, averagePeriod, averageMAType)
+upTrend = trigger > average
+
+triggerColor = colorLines == "Transparent" ? na :
+               colorLines == "CustomColors" ? (trigger > trigger[1] ? triggerRisingColor : triggerFallingColor) :
+               colorLines == "RegionColors"  ? (upTrend[1] ? regionUpColor : regionDownColor) : color.green
+
+averageColor = colorLines == "Transparent" ? na :
+               colorLines == "CustomColors" ? (average > average[1] ? averageRisingColor : averageFallingColor) :
+               colorLines == "RegionColors"  ? (upTrend[1] ? regionUpColor : regionDownColor) : color.red
+
+// ==================== CÁLCULO EMAs ====================
+emaShort     = ta.ema(close, emaShortLength)
+emaLong      = ta.ema(close, emaLongLength)
+emaCrossUp   = ta.crossover(emaShort, emaLong)
+emaCrossDown = ta.crossunder(emaShort, emaLong)
+
+// ==================== CÁLCULO RSI ====================
+rsi = ta.rsi(close, rsiLength)
+rsiCrossOversold   = ta.crossunder(rsi, rsiOversold)
+rsiCrossOverbought = ta.crossover(rsi, rsiOverbought)
+
+// ==================== COLORES DIVERGENCIAS ====================
+bull1Color  = color.new(#00E676, 0)
+bear1Color  = color.new(#FF1744, 0)
+hBull1Color = color.new(#00BCD4, 0)
+hBear1Color = color.new(#FF9800, 0)
+bull2Color  = color.new(#00E676, 40)
+bear2Color  = color.new(#FF1744, 40)
+hBull2Color = color.new(#00BCD4, 40)
+hBear2Color = color.new(#FF9800, 40)
+bull3Color  = color.new(#00E676, 65)
+bear3Color  = color.new(#FF1744, 65)
+hBull3Color = color.new(#00BCD4, 65)
+hBear3Color = color.new(#FF9800, 65)
+
+// ==================== FUNCIÓN AUXILIAR RANGO ====================
+_inRange(bool cond, int rMin, int rMax) =>
+    bars = ta.barssince(cond)
+    rMin <= bars and bars <= rMax
+
+// ==================== CÁLCULO DIVERGENCIAS (sin line.new dentro) ====================
+f_divs(int lbL, int lbR, int rMin, int rMax) =>
+    float rsiLBR  = rsi[lbR]
+    float lowLBR  = low[lbR]
+    float highLBR = high[lbR]
+
+    bool plFound = not na(ta.pivotlow(rsi,  lbL, lbR))
+    bool phFound = not na(ta.pivothigh(rsi, lbL, lbR))
+
+    // Regular Alcista: precio LL, RSI HL
+    bool bullC = plFound and
+                 lowLBR  < ta.valuewhen(plFound, lowLBR,  1) and
+                 rsiLBR  > ta.valuewhen(plFound, rsiLBR,  1) and
+                 _inRange(plFound[1], rMin, rMax)
+
+    // Regular Bajista: precio HH, RSI LH
+    bool bearC = phFound and
+                 highLBR > ta.valuewhen(phFound, highLBR, 1) and
+                 rsiLBR  < ta.valuewhen(phFound, rsiLBR,  1) and
+                 _inRange(phFound[1], rMin, rMax)
+
+    // Oculta Alcista: precio HL, RSI LL
+    bool hBullC = plFound and
+                  lowLBR  > ta.valuewhen(plFound, lowLBR,  1) and
+                  rsiLBR  < ta.valuewhen(plFound, rsiLBR,  1) and
+                  _inRange(plFound[1], rMin, rMax)
+
+    // Oculta Bajista: precio LH, RSI HH
+    bool hBearC = phFound and
+                  highLBR < ta.valuewhen(phFound, highLBR, 1) and
+                  rsiLBR  > ta.valuewhen(phFound, rsiLBR,  1) and
+                  _inRange(phFound[1], rMin, rMax)
+
+    [rsiLBR, lowLBR, highLBR, plFound, phFound, bullC, bearC, hBullC, hBearC]
+
+// ==================== CALCULAR LOS 3 NIVELES ====================
+[r1, lo1, hi1, pl1, ph1, bull1, bear1, hBull1, hBear1] = f_divs(lb1L, lb1R, rn1L, rn1U)
+[r2, lo2, hi2, pl2, ph2, bull2, bear2, hBull2, hBear2] = f_divs(lb2L, lb2R, rn2L, rn2U)
+[r3, lo3, hi3, pl3, ph3, bull3, bear3, hBull3, hBear3] = f_divs(lb3L, lb3R, rn3L, rn3U)
+
+// ==================== VARIABLES PERSISTENTES PARA GUARDAR PIVOTE ANTERIOR ====================
+// — Nivel 1 —
+var int   bull1Bar1   = na,  var float bull1Price1   = na
+var int   bear1Bar1   = na,  var float bear1Price1   = na
+var int   hbull1Bar1  = na,  var float hbull1Price1  = na
+var int   hbear1Bar1  = na,  var float hbear1Price1  = na
+// — Nivel 2 —
+var int   bull2Bar1   = na,  var float bull2Price1   = na
+var int   bear2Bar1   = na,  var float bear2Price1   = na
+var int   hbull2Bar1  = na,  var float hbull2Price1  = na
+var int   hbear2Bar1  = na,  var float hbear2Price1  = na
+// — Nivel 3 —
+var int   bull3Bar1   = na,  var float bull3Price1   = na
+var int   bear3Bar1   = na,  var float bear3Price1   = na
+var int   hbull3Bar1  = na,  var float hbull3Price1  = na
+var int   hbear3Bar1  = na,  var float hbear3Price1  = na
+
+// ==================== ACTUALIZAR PIVOTE ANTERIOR — NIVEL 1 ====================
+if pl1 and not bull1 and not hBull1
+    bull1Bar1    := bar_index - lb1R
+    bull1Price1  := lo1
+    hbull1Bar1   := bar_index - lb1R
+    hbull1Price1 := lo1
+if ph1 and not bear1 and not hBear1
+    bear1Bar1    := bar_index - lb1R
+    bear1Price1  := hi1
+    hbear1Bar1   := bar_index - lb1R
+    hbear1Price1 := hi1
+
+// ==================== ACTUALIZAR PIVOTE ANTERIOR — NIVEL 2 ====================
+if pl2 and not bull2 and not hBull2
+    bull2Bar1    := bar_index - lb2R
+    bull2Price1  := lo2
+    hbull2Bar1   := bar_index - lb2R
+    hbull2Price1 := lo2
+if ph2 and not bear2 and not hBear2
+    bear2Bar1    := bar_index - lb2R
+    bear2Price1  := hi2
+    hbear2Bar1   := bar_index - lb2R
+    hbear2Price1 := hi2
+
+// ==================== ACTUALIZAR PIVOTE ANTERIOR — NIVEL 3 ====================
+if pl3 and not bull3 and not hBull3
+    bull3Bar1    := bar_index - lb3R
+    bull3Price1  := lo3
+    hbull3Bar1   := bar_index - lb3R
+    hbull3Price1 := lo3
+if ph3 and not bear3 and not hBear3
+    bear3Bar1    := bar_index - lb3R
+    bear3Price1  := hi3
+    hbear3Bar1   := bar_index - lb3R
+    hbear3Price1 := hi3
+
+// ==================== TRAZAR LÍNEAS — NIVEL 1 ====================
+if bull1 and sh1 and showBull and not na(bull1Bar1)
+    line.new(bull1Bar1, bull1Price1, bar_index - lb1R, lo1,
+         color=bull1Color, width=divLineWidth, style=line.style_solid)
+    if showDivLabels
+        label.new(bar_index - lb1R, lo1, "D+",
+             color=color.new(bull1Color, 60), textcolor=bull1Color,
+             style=label.style_label_up, size=size.tiny)
+
+if bear1 and sh1 and showBear and not na(bear1Bar1)
+    line.new(bear1Bar1, bear1Price1, bar_index - lb1R, hi1,
+         color=bear1Color, width=divLineWidth, style=line.style_solid)
+    if showDivLabels
+        label.new(bar_index - lb1R, hi1, "D-",
+             color=color.new(bear1Color, 60), textcolor=bear1Color,
+             style=label.style_label_down, size=size.tiny)
+
+if hBull1 and sh1 and showHidden and not na(hbull1Bar1)
+    line.new(hbull1Bar1, hbull1Price1, bar_index - lb1R, lo1,
+         color=hBull1Color, width=divLineWidth, style=line.style_dashed)
+    if showDivLabels
+        label.new(bar_index - lb1R, lo1, "DO+",
+             color=color.new(hBull1Color, 60), textcolor=hBull1Color,
+             style=label.style_label_up, size=size.tiny)
+
+if hBear1 and sh1 and showHidden and not na(hbear1Bar1)
+    line.new(hbear1Bar1, hbear1Price1, bar_index - lb1R, hi1,
+         color=hBear1Color, width=divLineWidth, style=line.style_dashed)
+    if showDivLabels
+        label.new(bar_index - lb1R, hi1, "DO-",
+             color=color.new(hBear1Color, 60), textcolor=hBear1Color,
+             style=label.style_label_down, size=size.tiny)
+
+// ==================== TRAZAR LÍNEAS — NIVEL 2 ====================
+if bull2 and sh2 and showBull and not na(bull2Bar1)
+    line.new(bull2Bar1, bull2Price1, bar_index - lb2R, lo2,
+         color=bull2Color, width=math.max(1, divLineWidth - 1), style=line.style_solid)
+    if showDivLabels
+        label.new(bar_index - lb2R, lo2, "D+",
+             color=color.new(bull2Color, 60), textcolor=bull2Color,
+             style=label.style_label_up, size=size.tiny)
+
+if bear2 and sh2 and showBear and not na(bear2Bar1)
+    line.new(bear2Bar1, bear2Price1, bar_index - lb2R, hi2,
+         color=bear2Color, width=math.max(1, divLineWidth - 1), style=line.style_solid)
+    if showDivLabels
+        label.new(bar_index - lb2R, hi2, "D-",
+             color=color.new(bear2Color, 60), textcolor=bear2Color,
+             style=label.style_label_down, size=size.tiny)
+
+if hBull2 and sh2 and showHidden and not na(hbull2Bar1)
+    line.new(hbull2Bar1, hbull2Price1, bar_index - lb2R, lo2,
+         color=hBull2Color, width=math.max(1, divLineWidth - 1), style=line.style_dashed)
+    if showDivLabels
+        label.new(bar_index - lb2R, lo2, "DO+",
+             color=color.new(hBull2Color, 60), textcolor=hBull2Color,
+             style=label.style_label_up, size=size.tiny)
+
+if hBear2 and sh2 and showHidden and not na(hbear2Bar1)
+    line.new(hbear2Bar1, hbear2Price1, bar_index - lb2R, hi2,
+         color=hBear2Color, width=math.max(1, divLineWidth - 1), style=line.style_dashed)
+    if showDivLabels
+        label.new(bar_index - lb2R, hi2, "DO-",
+             color=color.new(hBear2Color, 60), textcolor=hBear2Color,
+             style=label.style_label_down, size=size.tiny)
+
+// ==================== TRAZAR LÍNEAS — NIVEL 3 ====================
+if bull3 and sh3 and showBull and not na(bull3Bar1)
+    line.new(bull3Bar1, bull3Price1, bar_index - lb3R, lo3,
+         color=bull3Color, width=math.max(1, divLineWidth - 1), style=line.style_solid)
+    if showDivLabels
+        label.new(bar_index - lb3R, lo3, "D+",
+             color=color.new(bull3Color, 60), textcolor=bull3Color,
+             style=label.style_label_up, size=size.tiny)
+
+if bear3 and sh3 and showBear and not na(bear3Bar1)
+    line.new(bear3Bar1, bear3Price1, bar_index - lb3R, hi3,
+         color=bear3Color, width=math.max(1, divLineWidth - 1), style=line.style_solid)
+    if showDivLabels
+        label.new(bar_index - lb3R, hi3, "D-",
+             color=color.new(bear3Color, 60), textcolor=bear3Color,
+             style=label.style_label_down, size=size.tiny)
+
+if hBull3 and sh3 and showHidden and not na(hbull3Bar1)
+    line.new(hbull3Bar1, hbull3Price1, bar_index - lb3R, lo3,
+         color=hBull3Color, width=math.max(1, divLineWidth - 1), style=line.style_dashed)
+    if showDivLabels
+        label.new(bar_index - lb3R, lo3, "DO+",
+             color=color.new(hBull3Color, 60), textcolor=hBull3Color,
+             style=label.style_label_up, size=size.tiny)
+
+if hBear3 and sh3 and showHidden and not na(hbear3Bar1)
+    line.new(hbear3Bar1, hbear3Price1, bar_index - lb3R, hi3,
+         color=hBear3Color, width=math.max(1, divLineWidth - 1), style=line.style_dashed)
+    if showDivLabels
+        label.new(bar_index - lb3R, hi3, "DO-",
+             color=color.new(hBear3Color, 60), textcolor=hBear3Color,
+             style=label.style_label_down, size=size.tiny)
+
+// ==================== PLOTEAR MONARCABAND ====================
+p1 = plot(trigger, "Trigger", color=triggerColor, linewidth=2)
+p2 = plot(average, "Average", color=averageColor, linewidth=2)
+fillColor = upTrend ? regionUpColor : regionDownColor
+fill(p1, p2, color=colorRegion ? fillColor : na, title="Region")
+
+// ==================== PLOTEAR EMAs ====================
+plot(showEMAs ? emaShort : na, "EMA Corta", color=emaShortColor, linewidth=2)
+plot(showEMAs ? emaLong  : na, "EMA Larga", color=emaLongColor,  linewidth=2)
+plotshape(showEMACrosses and emaCrossUp,   "Cruce EMA Alcista", shape.triangleup,   location.belowbar, emaCrossUpColor,   size=size.small)
+plotshape(showEMACrosses and emaCrossDown, "Cruce EMA Bajista", shape.triangledown, location.abovebar, emaCrossDownColor, size=size.small)
+
+// ==================== SEÑALES RSI ====================
+plotshape(series=showRsiSignals and rsiCrossOversold,   title="RSI Sobreventa",  style=shape.circle, location=location.belowbar, color=rsiOversoldColor,   size=size.small)
+plotshape(series=showRsiSignals and rsiCrossOverbought, title="RSI Sobrecompra", style=shape.circle, location=location.abovebar, color=rsiOverboughtColor, size=size.small)
+
+// ==================== CRUCES MONARCABAND ====================
+crossUp   = ta.crossover(trigger, average)
+crossDown = ta.crossunder(trigger, average)
+
+arrowTickOffset = arrowOffset * syminfo.mintick
+
+type LineInfo
+    line id
+    float price
+    bool isUp
+
+var array<LineInfo> activeLines = array.new<LineInfo>()
+
+if array.size(activeLines) > 0
+    for i = array.size(activeLines) - 1 to 0
+        lineInfo    = array.get(activeLines, i)
+        linePrice   = lineInfo.price
+        lineTouched = lineInfo.isUp ? (low[1] <= linePrice) : (high[1] >= linePrice)
+        if lineTouched
+            line.set_x2(lineInfo.id, bar_index - 1)
+            array.remove(activeLines, i)
+        else
+            line.set_x2(lineInfo.id, bar_index)
+
+if drawArrows and crossUp
+    arrowBasePrice = average[1] - arrowTickOffset
+    label.new(bar_index[1], arrowBasePrice, "▲", color=color.new(arrowUpColor, 0), textcolor=arrowUpColor, style=label.style_none, size=size.small)
+    if drawDottedLine
+        pipsRange = dottedLinePipsRange * syminfo.mintick
+        if math.abs(close - arrowBasePrice) <= pipsRange
+            newLine = line.new(bar_index[1], arrowBasePrice, bar_index, arrowBasePrice, color=arrowUpColor, style=line.style_dotted, width=2)
+            array.push(activeLines, LineInfo.new(newLine, arrowBasePrice, true))
+
+if drawArrows and crossDown
+    arrowBasePrice = average[1] + arrowTickOffset
+    label.new(bar_index[1], arrowBasePrice, "▼", color=color.new(arrowDownColor, 0), textcolor=arrowDownColor, style=label.style_none, size=size.small)
+    if drawDottedLine
+        pipsRange = dottedLinePipsRange * syminfo.mintick
+        if math.abs(close - arrowBasePrice) <= pipsRange
+            newLine = line.new(bar_index[1], arrowBasePrice, bar_index, arrowBasePrice, color=arrowDownColor, style=line.style_dotted, width=2)
+            array.push(activeLines, LineInfo.new(newLine, arrowBasePrice, false))
+
+// ==================== ALERTAS ====================
+if soundAlert and crossUp
+    alert("Trigger cruzó por encima de Average", alert.freq_once_per_bar)
+if soundAlert and crossDown
+    alert("Trigger cruzó por debajo de Average", alert.freq_once_per_bar)
+
+alertcondition(crossUp,              "MonarcaBand Cross Up",        "Trigger cruzó por encima de Average")
+alertcondition(crossDown,            "MonarcaBand Cross Down",       "Trigger cruzó por debajo de Average")
+alertcondition(emaCrossUp,           "Cruce EMAs Alcista",           "EMA corta cruza sobre EMA larga")
+alertcondition(emaCrossDown,         "Cruce EMAs Bajista",           "EMA corta cruza bajo EMA larga")
+alertcondition(rsiCrossOversold,     "RSI Sobreventa",               "RSI ha cruzado el nivel de sobreventa")
+alertcondition(rsiCrossOverbought,   "RSI Sobrecompra",              "RSI ha cruzado el nivel de sobrecompra")
+alertcondition(bull1 or bull2 or bull3,     "Div Alcista Regular",  "Divergencia Alcista Regular en {{ticker}} ({{interval}})")
+alertcondition(bear1 or bear2 or bear3,     "Div Bajista Regular",  "Divergencia Bajista Regular en {{ticker}} ({{interval}})")
+alertcondition(hBull1 or hBull2 or hBull3, "Div Alcista Oculta",   "Divergencia Alcista Oculta en {{ticker}} ({{interval}})")
+alertcondition(hBear1 or hBear2 or hBear3, "Div Bajista Oculta",   "Divergencia Bajista Oculta en {{ticker}} ({{interval}})")
