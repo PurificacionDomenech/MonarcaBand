@@ -180,6 +180,21 @@ select option{background:#030d0a}
   height:320px;gap:14px;color:var(--muted)}
 .ei{font-size:36px;opacity:.2}
 .et{font-family:var(--ff);font-size:14px;letter-spacing:.06em}
+
+/* ── RSI FILTER BAR ── */
+#rsi-filters{display:flex;align-items:center;gap:6px;padding:5px 14px;flex-wrap:wrap;
+  border-bottom:1px solid var(--bdr2);background:rgba(0,200,150,.025)}
+.rf-lbl{font-family:var(--fm);font-size:9px;color:var(--muted);letter-spacing:.08em;
+  text-transform:uppercase;margin-right:2px}
+.rf-sep{width:1px;height:16px;background:var(--bdr);flex-shrink:0;margin:0 4px}
+.rfbtn{font-family:var(--fm);font-size:10px;padding:3px 9px;border-radius:4px;cursor:pointer;
+  border:1px solid rgba(0,200,150,.20);background:transparent;color:var(--muted);
+  transition:all .15s;white-space:nowrap}
+.rfbtn.active{border-color:var(--teal);color:var(--teal);background:var(--teal-dim)}
+.rfbtn.bull-btn.active{border-color:var(--bull);color:var(--bull);background:rgba(0,230,118,.08)}
+.rfbtn.bear-btn.active{border-color:var(--bear);color:var(--bear);background:rgba(255,23,68,.08)}
+.rfbtn.hbull-btn.active{border-color:var(--hbull);color:var(--hbull);background:rgba(0,188,212,.08)}
+.rfbtn.hbear-btn.active{border-color:var(--hbear);color:var(--hbear);background:rgba(255,152,0,.08)}
 </style>
 </head>
 <body>
@@ -303,6 +318,18 @@ select option{background:#030d0a}
           <span style="border:1px solid rgba(0,200,150,.4);width:10px;height:10px;border-radius:2px;display:inline-block;background:rgba(0,200,150,.1)"></span>
           <span style="color:var(--teal)">Zona clave RSI</span>
         </div>
+      </div>
+      <div id="rsi-filters">
+        <span class="rf-lbl">Nivel</span>
+        <button class="rfbtn active" id="rf-n1" onclick="toggleFilter('n1')">N1</button>
+        <button class="rfbtn active" id="rf-n2" onclick="toggleFilter('n2')">N2</button>
+        <button class="rfbtn active" id="rf-n3" onclick="toggleFilter('n3')">N3</button>
+        <div class="rf-sep"></div>
+        <span class="rf-lbl">Tipo</span>
+        <button class="rfbtn bull-btn active" id="rf-bull" onclick="toggleFilter('bull')">▲ Reg</button>
+        <button class="rfbtn bear-btn active" id="rf-bear" onclick="toggleFilter('bear')">▼ Reg</button>
+        <button class="rfbtn hbull-btn active" id="rf-hbull" onclick="toggleFilter('hbull')">▲ Oct</button>
+        <button class="rfbtn hbear-btn active" id="rf-hbear" onclick="toggleFilter('hbear')">▼ Oct</button>
       </div>
       <div id="rsi-chart"></div>
     </div>
@@ -634,77 +661,126 @@ function renderPrice(d){
   );
 }
 
+// ── RSI state for live filter re-render ─────────────────────────────────────
+let _rsiData = null;
+const _rsiFilters = {n1:true, n2:true, n3:true, bull:true, bear:true, hbull:true, hbear:true};
+let _rsiSyncing = false;        // re-entrancy guard for bidirectional zoom sync
+let _rsiMainHandler = null;     // stored main-chart relayout handler reference
+let _rsiPanelHandler = null;    // stored rsi-chart relayout handler reference
+
+function toggleFilter(key){
+  _rsiFilters[key] = !_rsiFilters[key];
+  const btn = document.getElementById('rf-'+key);
+  if(btn) btn.classList.toggle('active', _rsiFilters[key]);
+  if(_rsiData) _drawRsi(_rsiData);
+}
+
 function renderRsi(d){
   const ch = d.chart; if(!ch||!ch.rsi||!ch.rsi.length) return;
+  _rsiData = d;
   document.getElementById('rsi-wrap').style.display = 'block';
-  const rd=ch.rsi, xs=rd.map(p=>new Date(p.x)), ys=rd.map(p=>p.y);
-  const segs = d.rsi_div_segments||[];
+  _drawRsi(d);
+}
 
+function _drawRsi(d){
+  const ch = d.chart;
+  const rd = ch.rsi, xs = rd.map(p=>new Date(p.x)), ys = rd.map(p=>p.y);
+  const allSegs = d.rsi_div_segments||[];
+
+  // Apply active filters
+  const lvlOk = l => (l===1&&_rsiFilters.n1)||(l===2&&_rsiFilters.n2)||(l===3&&_rsiFilters.n3);
+  const segs = allSegs.filter(s => lvlOk(s.level) && _rsiFilters[s.type]);
+
+  // RSI base line — purple like Pine Script #7E57C2
   const rsiLine={type:'scatter',name:'RSI (14)',x:xs,y:ys,
     line:{color:'rgba(126,87,194,.85)',width:1.5},hovertemplate:'RSI: %{y:.2f}<extra></extra>'};
 
-  // Coloreamos los puntos de RSI según zona
+  // Colored zone dots (OB/OS on the RSI line)
   const obX=[],obY=[],osX=[],osY=[];
-  rd.forEach(p=>{ if(p.zone==='ob'){obX.push(new Date(p.x));obY.push(p.y);} else if(p.zone==='os'){osX.push(new Date(p.x));osY.push(p.y);} });
-  const obDot={type:'scatter',mode:'markers',x:obX,y:obY,marker:{color:'rgba(255,23,68,.5)',size:3},showlegend:false,hoverinfo:'skip'};
-  const osDot={type:'scatter',mode:'markers',x:osX,y:osY,marker:{color:'rgba(0,230,118,.5)',size:3},showlegend:false,hoverinfo:'skip'};
+  rd.forEach(p=>{
+    if(p.zone==='ob'){obX.push(new Date(p.x));obY.push(p.y);}
+    else if(p.zone==='os'){osX.push(new Date(p.x));osY.push(p.y);}
+  });
+  const obDot={type:'scatter',mode:'markers',x:obX,y:obY,
+    marker:{color:'rgba(255,23,68,.5)',size:3},showlegend:false,hoverinfo:'skip'};
+  const osDot={type:'scatter',mode:'markers',x:osX,y:osY,
+    marker:{color:'rgba(0,230,118,.5)',size:3},showlegend:false,hoverinfo:'skip'};
 
-  // ── Divergencias: líneas sutiles + puntos coloreados (fiel al Pine Script) ──
-  // Líneas conectoras muy tenues (solo referencia visual)
+  // Pine Script style: connector lines — width N1=2.5 N2=1.6 N3=1.0, opacity N1=1.0 N2=0.70 N3=0.45
+  const LINE_W  = {1:2.5, 2:1.6, 3:1.0};
+  const LINE_OP = {1:1.0, 2:0.70, 3:0.45};
+  const SZ_CONF = {1:11, 2:8, 3:6};
+  const SZ_REF  = {1:7,  2:5, 3:4};
+
   const divLines = segs.map(s=>({
     type:'scatter', mode:'lines',
     x:[new Date(s.x1), new Date(s.x2)],
     y:[s.y1, s.y2],
     line:{
       color: dc(s.type, s.level),
-      width: s.level===1 ? 1.4 : s.level===2 ? 0.9 : 0.6,
+      width: LINE_W[Math.min(s.level,3)],
       dash: (s.type==='hbull'||s.type==='hbear') ? 'dash' : 'solid'
     },
-    opacity: s.level===1 ? 0.65 : s.level===2 ? 0.40 : 0.22,
+    opacity: LINE_OP[Math.min(s.level,3)],
     showlegend:false, hoverinfo:'skip'
   }));
 
-  // Pivote confirmado (x2) — círculo sólido prominente (como plot() linewidth=3 del Pine Script)
-  const dotConf={}, dotRef={};
+  // Left pivot: circle-open (reference)
+  const dotRef={};
+  segs.forEach(s=>{
+    const k=s.type+'_'+s.level;
+    if(!dotRef[k]) dotRef[k]={type:s.type,level:s.level,x:[],y:[]};
+    dotRef[k].x.push(new Date(s.x1)); dotRef[k].y.push(s.y1);
+  });
+  const refDots = Object.values(dotRef).map(g=>({
+    type:'scatter', mode:'markers', x:g.x, y:g.y,
+    marker:{
+      color:'rgba(0,0,0,0)',
+      size:SZ_REF[Math.min(g.level,3)],
+      symbol:'circle-open',
+      line:{color:dc(g.type,g.level), width:1.8}
+    },
+    showlegend:false, hoverinfo:'skip'
+  }));
+
+  // Right pivot: solid prominent circle (confirmed divergence)
+  const dotConf={};
   segs.forEach(s=>{
     const k=s.type+'_'+s.level;
     if(!dotConf[k]) dotConf[k]={type:s.type,level:s.level,x:[],y:[]};
     dotConf[k].x.push(new Date(s.x2)); dotConf[k].y.push(s.y2);
-    if(!dotRef[k]) dotRef[k]={type:s.type,level:s.level,x:[],y:[]};
-    dotRef[k].x.push(new Date(s.x1)); dotRef[k].y.push(s.y1);
   });
-  const SZ_CONF={1:11,2:8,3:6}, SZ_REF={1:7,2:5,3:4};
   const confDots = Object.values(dotConf).map(g=>({
     type:'scatter', mode:'markers', x:g.x, y:g.y,
     name: DLABELS[g.type]+' N'+g.level,
-    marker:{color:dc(g.type,g.level), size:SZ_CONF[Math.min(g.level,3)],
-      symbol:'circle', line:{color:'rgba(0,0,0,.5)',width:1.5}},
+    marker:{
+      color: dc(g.type,g.level),
+      size: SZ_CONF[Math.min(g.level,3)],
+      symbol:'circle',
+      line:{color:'rgba(0,0,0,.5)',width:1.5}
+    },
     showlegend:false,
     hovertemplate:DLABELS[g.type]+' N'+g.level+' · RSI: %{y:.1f}<extra></extra>'
   }));
-  const refDots = Object.values(dotRef).map(g=>({
-    type:'scatter', mode:'markers', x:g.x, y:g.y,
-    marker:{color:dc(g.type,g.level), size:SZ_REF[Math.min(g.level,3)],
-      symbol:'circle-open', line:{color:dc(g.type,g.level),width:1.5}},
-    showlegend:false, hoverinfo:'skip'
-  }));
 
-  // Zona RSI clave highlight (franjas)
+  // RSI key zone shapes + divergence zone highlights
   const lx = [xs[0], xs[xs.length-1]];
   const shapes = [
-    {type:'line',x0:lx[0],x1:lx[1],y0:70,y1:70,line:{color:'rgba(255,23,68,.3)',width:1,dash:'dash'}},
-    {type:'line',x0:lx[0],x1:lx[1],y0:50,y1:50,line:{color:'rgba(0,200,150,.2)',width:1,dash:'dot'}},
-    {type:'line',x0:lx[0],x1:lx[1],y0:30,y1:30,line:{color:'rgba(0,230,118,.3)',width:1,dash:'dash'}},
     {type:'rect',x0:lx[0],x1:lx[1],y0:70,y1:100,fillcolor:'rgba(255,23,68,.05)',line:{width:0}},
     {type:'rect',x0:lx[0],x1:lx[1],y0:0, y1:30, fillcolor:'rgba(0,230,118,.05)',line:{width:0}},
+    {type:'line',x0:lx[0],x1:lx[1],y0:70,y1:70,line:{color:'rgba(255,23,68,.30)',width:1,dash:'dash'}},
+    {type:'line',x0:lx[0],x1:lx[1],y0:50,y1:50,line:{color:'rgba(0,200,150,.20)',width:1,dash:'dot'}},
+    {type:'line',x0:lx[0],x1:lx[1],y0:30,y1:30,line:{color:'rgba(0,230,118,.30)',width:1,dash:'dash'}},
   ];
 
-  // Marcar zonas de divergencias clave con rectángulos semi-transparentes
+  // Semi-transparent rectangles for divergences in key RSI zone
   segs.filter(s=>s.in_zone).forEach(s=>{
-    shapes.push({type:'rect',
-      x0:new Date(s.x1),x1:new Date(s.x2),
+    shapes.push({
+      type:'rect',
+      x0:new Date(s.x1), x1:new Date(s.x2),
       y0:Math.min(s.y1,s.y2)-3, y1:Math.max(s.y1,s.y2)+3,
-      fillcolor:'rgba(0,200,150,.07)',line:{color:'rgba(0,200,150,.25)',width:1},
+      fillcolor:'rgba(0,200,150,.08)',
+      line:{color:'rgba(0,200,150,.30)',width:1},
       opacity:0.9
     });
   });
@@ -729,7 +805,7 @@ function renderRsi(d){
     hoverlabel:{bgcolor:'#060f0c',font:{color:'#c8f0e4',size:11,family:'Share Tech Mono'}}
   };
 
-  // ── Círculos de aviso en RSI 70 / 30 ────────────────────────
+  // OB/OS event markers
   const rsiSigs = d.signals||[];
   const obCirc = rsiSigs.filter(s=>s.type==='rsi_ob').map(s=>({x:new Date(s.x),y:s.rsi||70}));
   const osCirc = rsiSigs.filter(s=>s.type==='rsi_os').map(s=>({x:new Date(s.x),y:s.rsi||30}));
@@ -748,14 +824,44 @@ function renderRsi(d){
   const rsiMarkers = [obMark, osMark].filter(Boolean);
 
   const rel = document.getElementById('rsi-chart');
-  Plotly.newPlot(rel, [rsiLine, obDot, osDot, ...divLines, ...refDots, ...confDots, ...rsiMarkers], layout,
-    {responsive:true,displayModeBar:false});
+  Plotly.newPlot(rel,
+    [rsiLine, obDot, osDot, ...divLines, ...refDots, ...confDots, ...rsiMarkers],
+    layout,
+    {responsive:true, displayModeBar:false}
+  );
 
-  // Sincronizar zoom con gráfico principal
-  document.getElementById('main-chart').on('plotly_relayout', evt=>{
-    if(evt['xaxis.range[0]']!==undefined)
-      Plotly.relayout(rel,{'xaxis.range[0]':evt['xaxis.range[0]'],'xaxis.range[1]':evt['xaxis.range[1]']});
-  });
+  // Bidirectional zoom sync — guarded with _rsiSyncing to prevent ping-pong
+  const mainEl = document.getElementById('main-chart');
+
+  // Remove only our previously registered handlers (not unrelated listeners)
+  if(_rsiMainHandler)  { try{ mainEl.removeListener('plotly_relayout', _rsiMainHandler); }catch(_){} }
+  if(_rsiPanelHandler) { try{ rel.removeListener('plotly_relayout', _rsiPanelHandler);  }catch(_){} }
+
+  _rsiMainHandler = evt=>{
+    if(_rsiSyncing) return;
+    if(evt['xaxis.range[0]']!==undefined){
+      _rsiSyncing=true;
+      Plotly.relayout(rel,{'xaxis.range[0]':evt['xaxis.range[0]'],'xaxis.range[1]':evt['xaxis.range[1]']})
+        .finally(()=>{ _rsiSyncing=false; });
+    } else if(evt['xaxis.autorange']){
+      _rsiSyncing=true;
+      Plotly.relayout(rel,{'xaxis.autorange':true}).finally(()=>{ _rsiSyncing=false; });
+    }
+  };
+  _rsiPanelHandler = evt=>{
+    if(_rsiSyncing) return;
+    if(evt['xaxis.range[0]']!==undefined){
+      _rsiSyncing=true;
+      Plotly.relayout(mainEl,{'xaxis.range[0]':evt['xaxis.range[0]'],'xaxis.range[1]':evt['xaxis.range[1]']})
+        .finally(()=>{ _rsiSyncing=false; });
+    } else if(evt['xaxis.autorange']){
+      _rsiSyncing=true;
+      Plotly.relayout(mainEl,{'xaxis.autorange':true}).finally(()=>{ _rsiSyncing=false; });
+    }
+  };
+
+  mainEl.on('plotly_relayout', _rsiMainHandler);
+  rel.on('plotly_relayout', _rsiPanelHandler);
 }
 
 function renderSigs(sigs){
