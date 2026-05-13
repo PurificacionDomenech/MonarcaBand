@@ -688,6 +688,30 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 3, "ok": False,
             "texto": "Sin nivel clave fractal relevante", "tipo": "info"})
 
+    # ③ BIS: MonarcaBand — dirección de tendencia + cruce reciente
+    tb_cross_val = None
+    if "TB_TRIGGER" in df.columns and "TB_AVERAGE" in df.columns:
+        t_val = df["TB_TRIGGER"].iloc[n]
+        a_val = df["TB_AVERAGE"].iloc[n]
+        t_prev = df["TB_TRIGGER"].iloc[n - 1] if n > 0 else None
+        a_prev = df["TB_AVERAGE"].iloc[n - 1] if n > 0 else None
+        if pd.notna(t_val) and pd.notna(a_val) and pd.notna(t_prev) and pd.notna(a_prev):
+            is_bull  = t_val > a_val
+            was_bull = t_prev > a_prev
+            tb_dir   = "bullish" if is_bull else "bearish"
+            if was_bull != is_bull:
+                tb_text = f"⚡ MonarcaBand CAMBIO DE TENDENCIA {'ALCISTA' if is_bull else 'BAJISTA'}"
+                tb_cross_val = 1 if is_bull else -1
+            else:
+                tb_text = f"MonarcaBand {'ALCISTA' if is_bull else 'BAJISTA'} (tendencia activa)"
+            raw.append({"id": 3.5, "ok": True, "texto": tb_text, "tipo": tb_dir})
+        else:
+            raw.append({"id": 3.5, "ok": False,
+                "texto": "MonarcaBand no disponible", "tipo": "info"})
+    else:
+        raw.append({"id": 3.5, "ok": False,
+            "texto": "MonarcaBand no disponible", "tipo": "info"})
+
     # ④ Precio sobre/bajo apertura del DÍA y SEMANA → dirección real
     if opens:
         do = opens.get("day_open")
@@ -871,6 +895,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         "alert":         alert,
         "day_context":   day_context,
         "week_context":  week_context,
+        "tb_cross":      tb_cross_val,
     }
 
 
@@ -985,6 +1010,23 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                     frac_touch = ft["touch"]
                     frac_info  = ft
 
+                # Toque de banda Monarca (precio toca Trigger o Average)
+                band_touch = False
+                band_which = ""
+                h_val = float(high.iloc[i])
+                l_val = float(low.iloc[i])
+                t_now_f = float(t_now)
+                a_now_f = float(a_now)
+                # Tolerancia: 0.3% del precio para activos normales, 0.1% para forex
+                tol_pct = 0.001 if any(x in t for x in ["JPY", "USD"]) else 0.003
+                band_tol = price * tol_pct
+                if h_val >= t_now_f - band_tol and l_val <= t_now_f + band_tol:
+                    band_touch = True
+                    band_which = "Trigger"
+                elif h_val >= a_now_f - band_tol and l_val <= a_now_f + band_tol:
+                    band_touch = True
+                    band_which = "Average"
+
                 # Construir confluencias
                 confluencias = [{
                     "id": "tb_cross",
@@ -1004,11 +1046,17 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                         "texto": f"Toque nivel clave ({frac_info['tipo'].upper()})",
                         "ok": True, "tipo": direction,
                     })
+                if band_touch:
+                    confluencias.append({
+                        "id": "tb_band",
+                        "texto": f"Precio toca banda Monarca ({band_which})",
+                        "ok": True, "tipo": direction,
+                    })
 
                 puntos = sum(1 for c in confluencias if c.get("ok"))
                 if puntos >= 2:
                     # Dedup por combo de confluencias (así nuevas confluencias re-avisan)
-                    dedup = f"TB_CONF_{t}_{direction}_{'div' if zone_divs else ''}_{'frac' if frac_touch else ''}"
+                    dedup = f"TB_CONF_{t}_{direction}_{'div' if zone_divs else ''}_{'frac' if frac_touch else ''}_{'band' if band_touch else ''}"
                     if now - _sent_cache.get(dedup, 0) > _DEDUP_SECONDS:
                         try:
                             ts_utc = ts_parsed.tz_convert("UTC") if ts_parsed.tzinfo else ts_parsed.tz_localize("UTC")
@@ -1804,6 +1852,24 @@ async def _compute_row(ticker: str) -> dict:
         except Exception:
             pass
     confl = evaluate_confluencias(df, ticker=key, cfg=cfg, opens=opens, components_ctx=row_components_ctx)
+
+    # ¿Cruce reciente de MonarcaBand en las últimas 2 velas?
+    tb_cross_recent = False
+    if "TB_TRIGGER" in df.columns and "TB_AVERAGE" in df.columns and len(df) >= 3:
+        for i in range(2):
+            idx = len(df) - 1 - i
+            if idx < 1:
+                continue
+            tt_now = df["TB_TRIGGER"].iloc[idx]
+            ta_now = df["TB_AVERAGE"].iloc[idx]
+            tt_prev = df["TB_TRIGGER"].iloc[idx - 1]
+            ta_prev = df["TB_AVERAGE"].iloc[idx - 1]
+            if pd.notna(tt_now) and pd.notna(ta_now) and pd.notna(tt_prev) and pd.notna(ta_prev):
+                cross = (tt_now > ta_now and tt_prev <= ta_prev) or (tt_now < ta_now and tt_prev >= ta_prev)
+                if cross:
+                    tb_cross_recent = True
+                    break
+
     result = {
         "ticker": key,
         "price": last,
@@ -1816,6 +1882,7 @@ async def _compute_row(ticker: str) -> dict:
         "tb_signal": tb_signal,
         "tb_trigger": last_trig,
         "tb_average": last_avg,
+        "tb_cross_recent": tb_cross_recent,
         "confluencias_puntos": confl["puntos"] if confl else 0,
         "confluencias_estado": confl["estado"] if confl else "NO AHORA",
         "confluencias": confl["confluencias"] if confl else [],

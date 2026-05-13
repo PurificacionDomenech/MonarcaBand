@@ -671,7 +671,8 @@ async function loadRow(t){
     if(fe){
       if(d.tb_signal&&d.tb_signal!=='neutral'){
         const bull=d.tb_signal==='bull';
-        fe.innerHTML=`<span class="ftag ${bull?'maj-s':'maj-r'}">◈ ${bull?'▲ ALCISTA':'▼ BAJISTA'}</span>`;
+        const flash=d.tb_cross_recent?'⚡ ':'';
+        fe.innerHTML=`<span class="ftag ${bull?'maj-s':'maj-r'}">${flash}◈ ${bull?'▲ ALCISTA':'▼ BAJISTA'}${d.tb_cross_recent?' • CRUCE':''}</span>`;
       }else{fe.innerHTML='<span class="ftag none">—</span>'}
     }
     const se=document.getElementById(`tes-${id}`);
