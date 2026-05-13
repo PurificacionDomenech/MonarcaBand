@@ -62,6 +62,43 @@ ASSET_NAMES = {
     'SMH':'SMH','XLE':'XLE','AAPL':'AAPL · Apple',
 }
 
+TRADINGVIEW_URLS = {
+    '^DJI':     'https://www.tradingview.com/chart/?symbol=TVC:DJI',
+    '^NDX':     'https://www.tradingview.com/chart/?symbol=NASDAQ:NDX',
+    '^GSPC':    'https://www.tradingview.com/chart/?symbol=SP:SPX',
+    '^RUT':     'https://www.tradingview.com/chart/?symbol=TVC:RUT',
+    'GC=F':     'https://www.tradingview.com/chart/?symbol=COMEX:GC1!',
+    'SI=F':     'https://www.tradingview.com/chart/?symbol=COMEX:SI1!',
+    'CL=F':     'https://www.tradingview.com/chart/?symbol=NYMEX:CL1!',
+    'USDJPY=X': 'https://www.tradingview.com/chart/?symbol=FX:USDJPY',
+    'GBPJPY=X': 'https://www.tradingview.com/chart/?symbol=FX:GBPJPY',
+    'EURUSD=X': 'https://www.tradingview.com/chart/?symbol=FX:EURUSD',
+    'AUDUSD=X': 'https://www.tradingview.com/chart/?symbol=FX:AUDUSD',
+    '^TNX':     'https://www.tradingview.com/chart/?symbol=TVC:TNX',
+    '^TYX':     'https://www.tradingview.com/chart/?symbol=TVC:TYX',
+    'DX=F':     'https://www.tradingview.com/chart/?symbol=TVC:DXY',
+    'BTC-USD':  'https://www.tradingview.com/chart/?symbol=BINANCE:BTCUSDT',
+    'ETH-USD':  'https://www.tradingview.com/chart/?symbol=BINANCE:ETHUSDT',
+    'SPY':      'https://www.tradingview.com/chart/?symbol=AMEX:SPY',
+    'VOO':      'https://www.tradingview.com/chart/?symbol=AMEX:VOO',
+    'QQQ':      'https://www.tradingview.com/chart/?symbol=NASDAQ:QQQ',
+    'QQQM':     'https://www.tradingview.com/chart/?symbol=NASDAQ:QQQM',
+    'GLD':      'https://www.tradingview.com/chart/?symbol=AMEX:GLD',
+    'IAU':      'https://www.tradingview.com/chart/?symbol=AMEX:IAU',
+    'GDX':      'https://www.tradingview.com/chart/?symbol=AMEX:GDX',
+    'IWM':      'https://www.tradingview.com/chart/?symbol=AMEX:IWM',
+    'SMH':      'https://www.tradingview.com/chart/?symbol=NASDAQ:SMH',
+    'XLE':      'https://www.tradingview.com/chart/?symbol=AMEX:XLE',
+    'AAPL':     'https://www.tradingview.com/chart/?symbol=NASDAQ:AAPL',
+}
+
+def _tv_link(ticker: str, lang: str = "es") -> str:
+    url = TRADINGVIEW_URLS.get(ticker.upper())
+    if not url:
+        return ""
+    label = "Ver en TradingView 📊" if lang == "es" else "View on TradingView 📊"
+    return f'<a href="{url}">{label}</a>'
+
 def _strip_ticker(msg: str) -> str:
     return re.sub(r'^\[[^\]]+\]\s*', '', msg)
 
@@ -263,6 +300,11 @@ def _build_tg_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") ->
                 blocks.append(f"⚡ Score: <b>{score}/12</b> pts")
             else:
                 blocks.append(f"⚡ Puntuación: <b>{score}/12</b> pts")
+
+            # ── Enlace TradingView ────────────────────────────
+            tv = _tv_link(ticker, lang)
+            if tv:
+                blocks.append(tv)
 
     blocks.append(RISK_WARNING_EN if lang == "en" else RISK_WARNING_ES)
     blocks.append("")
@@ -707,6 +749,11 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
 
     lines.append("")
     lines.append(RISK_WARNING_EN if lang == "en" else RISK_WARNING_ES)
+
+    tv = _tv_link(t, lang)
+    if tv:
+        lines.append("")
+        lines.append(tv)
 
     lines.append("")
     if lang == "en":
