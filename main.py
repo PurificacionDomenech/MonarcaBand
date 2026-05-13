@@ -1442,8 +1442,8 @@ if HAS_SCHEDULER:
         try:
             scheduler = AsyncIOScheduler()
             scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
-            scheduler.add_job(_check_tb_confluences, "interval",
-                              minutes=5, id="tb_confl_5m")
+            scheduler.add_job(lambda: _check_tb_confluences(WATCH_TICKERS),
+                              "interval", minutes=5, id="tb_confl_5m")
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
