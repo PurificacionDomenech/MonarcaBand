@@ -47,3 +47,7 @@ run = ["gunicorn", "--bind=0.0.0.0:8000", "--reuse-port", "-w", "1", "-k", "uvic
 
 [userenv.shared]
 SUPABASE_URL = "https://mscvlzxxuawwmltsdxxb.supabase.co"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000
