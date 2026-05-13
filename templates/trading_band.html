@@ -136,6 +136,36 @@ select option{background:#030d0a}
   background:rgba(0,200,150,.15);color:var(--teal);border:1px solid rgba(0,200,150,.35);
   font-weight:600}
 
+/* ── PATTERNS ROW ── */
+#patterns-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.pat-card{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:12px 14px;
+  position:relative;overflow:hidden}
+.pat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.pat-card.bearish::before{background:rgba(255,23,68,.75)}
+.pat-card.bullish::before{background:rgba(0,230,118,.75)}
+.pat-card.forming::before{background:rgba(255,152,0,.75)}
+.pat-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.pat-type{font-family:var(--ff);font-size:19px;font-weight:700}
+.pat-type.bearish{color:var(--bear)}.pat-type.bullish{color:var(--bull)}
+.pat-type.forming{color:var(--hbear)}
+.pat-dir{font-family:var(--fm);font-size:9px;padding:2px 7px;border-radius:3px;font-weight:600;letter-spacing:.08em}
+.pat-dir.bearish{background:rgba(255,23,68,.14);color:var(--bear);border:1px solid rgba(255,23,68,.3)}
+.pat-dir.bullish{background:rgba(0,230,118,.10);color:var(--bull);border:1px solid rgba(0,230,118,.3)}
+.pat-status{font-family:var(--fm);font-size:9px;padding:2px 7px;border-radius:3px;margin-left:auto}
+.pat-status.confirmed{background:rgba(0,200,150,.12);color:var(--teal);border:1px solid rgba(0,200,150,.28)}
+.pat-status.forming{background:rgba(255,152,0,.10);color:var(--hbear);border:1px solid rgba(255,152,0,.28)}
+.pat-pts{font-family:var(--fm);font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.pat-row{display:flex;gap:6px;align-items:center}
+.pat-lbl{color:var(--teal);font-size:9px;min-width:28px;text-transform:uppercase}
+.pat-conf{display:flex;align-items:center;gap:7px;margin-top:7px}
+.pat-cb{flex:1;height:4px;border-radius:2px;background:rgba(0,200,150,.08);overflow:hidden}
+.pat-cf{height:100%;border-radius:2px;transition:width .5s}
+.pat-badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.pbadge{font-family:var(--fm);font-size:9px;padding:1px 6px;border-radius:3px;
+  background:rgba(0,200,150,.07);color:var(--muted);border:1px solid rgba(0,200,150,.15)}
+.pbadge.on{background:rgba(0,200,150,.16);color:var(--teal);border-color:rgba(0,200,150,.35)}
+.pat-notes{font-family:var(--fm);font-size:9px;color:var(--muted);margin-top:5px;opacity:.7}
+
 /* ── LOADING ── */
 #loading{display:none;position:fixed;inset:0;z-index:200;background:rgba(3,13,10,.90);
   align-items:center;justify-content:center;flex-direction:column;gap:16px}
@@ -275,6 +305,9 @@ select option{background:#030d0a}
     </div>
   </div>
 
+  <!-- PATTERNS PANEL -->
+  <div id="patterns-row" style="display:none"></div>
+
   <!-- BOTTOM PANELS -->
   <div id="bottom-row">
     <div class="panel">
@@ -345,6 +378,7 @@ function renderAll(d){
   renderStatus(d);
   renderPrice(d);
   renderRsi(d);
+  renderPatterns(d.patterns||[]);
   renderSigs(d.signals||[]);
   renderDivs(d.divergences||[]);
   renderZoneDivs(d.zone_divergences||[]);
@@ -497,6 +531,81 @@ function renderPrice(d){
     opacity: dv.level===1?0.95:dv.level===2?0.65:0.40
   }));
 
+  // ── Patrones de precio sobre el gráfico ─────────────────────
+  const PAT_META = {
+    M:      {color:'#ff4466', name:'◭ M'},
+    W:      {color:'#00e676', name:'◮ W'},
+    HCH:    {color:'#ff6644', name:'⊠ HCH'},
+    HCH_INV:{color:'#00cc88', name:'⊟ HCH Inv'},
+  };
+  const patTraces = [];
+  const patAnnotations = [];
+
+  (d.patterns||[]).slice(0,6).forEach(p => {
+    const meta = PAT_META[p.type] || {color:'#aaa', name:p.type};
+    const col  = p.status === 'forming' ? '#FFA500' : meta.color;
+    const pts  = p.points || [];
+
+    // Construir la línea del patrón: M/W incluye punto medio (valle/pico), HCH va directo
+    const linePts = [];
+    if(p.mid){
+      linePts.push(pts[0], {x:p.mid.x, y:p.mid.y}, pts[1]);
+    } else {
+      linePts.push(...pts);
+    }
+
+    patTraces.push({
+      type:'scatter', mode:'lines+markers',
+      name: meta.name + (p.status==='forming'?' (Form)':' ✓'),
+      x: linePts.map(pt=>new Date(pt.x)),
+      y: linePts.map(pt=>pt.y),
+      line:{color:col, width:2.5, dash: p.status==='forming'?'dot':'solid'},
+      marker:{size:[...Array(linePts.length)].map((_,i)=> (p.mid&&i===1)?0:9),
+        color:col, symbol:'circle', line:{color:'rgba(0,0,0,.5)',width:1}},
+      hovertemplate: meta.name+': %{y:.5g}<extra></extra>',
+      opacity: p.status==='forming' ? 0.72 : 0.95,
+    });
+
+    // Neckline como shape en el gráfico
+    const nk = p.neckline;
+    if(nk){
+      shapes.push({
+        type:'line',
+        x0:new Date(nk.x1), x1:new Date(nk.x2),
+        y0:nk.y1, y1:nk.y2,
+        line:{color:col, width:1.5, dash:'dash'},
+        opacity:0.65,
+      });
+    }
+
+    // Etiquetas de cada punto clave
+    pts.forEach(pt => {
+      const isBearishPt = p.direction==='bearish';
+      patAnnotations.push({
+        x:new Date(pt.x), y:pt.y,
+        xref:'x', yref:'y',
+        text:`<b>${pt.label}</b>`,
+        showarrow:true, arrowhead:0, arrowwidth:1, arrowcolor:col,
+        ax:0, ay: isBearishPt ? -20 : 20,
+        font:{color:col, size:10, family:'Share Tech Mono'},
+        bgcolor:'rgba(3,13,10,.80)', bordercolor:col, borderwidth:1, borderpad:3,
+      });
+    });
+
+    // Etiqueta neckline
+    if(nk){
+      patAnnotations.push({
+        x:new Date((nk.x1+nk.x2)/2), y:nk.y1,
+        xref:'x', yref:'y',
+        text:'nk',
+        showarrow:false,
+        font:{color:col, size:9, family:'Share Tech Mono'},
+        yshift: p.direction==='bearish' ? -10 : 10,
+        xanchor:'center',
+      });
+    }
+  });
+
   const layout={
     paper_bgcolor:'transparent', plot_bgcolor:'#060f0c',
     margin:{l:60,r:20,t:8,b:0},
@@ -506,7 +615,7 @@ function renderPrice(d){
     yaxis:{gridcolor:'rgba(0,200,150,.04)',linecolor:'rgba(0,200,150,.12)',
       tickfont:{color:'#4a8070',size:10,family:'Share Tech Mono'},side:'right'},
     legend:{font:{color:'#4a8070',size:10,family:'Share Tech Mono'},bgcolor:'rgba(0,0,0,0)',x:0.01,y:0.99},
-    shapes, hovermode:'x unified',
+    shapes, annotations:patAnnotations, hovermode:'x unified',
     hoverlabel:{bgcolor:'#060f0c',font:{color:'#c8f0e4',size:11,family:'Share Tech Mono'}}
   };
 
@@ -515,7 +624,8 @@ function renderPrice(d){
   Plotly.newPlot(el2,
     [...segFills, candles, trg, avg, es, el,
      mkCross(sigs.filter(s=>s.type==='tb_up'),   'triangle-up',  '#1eca47','▲ Alcista', true),
-     mkCross(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#e91b1b','▼ Bajista', false)],
+     mkCross(sigs.filter(s=>s.type==='tb_down'), 'triangle-down','#e91b1b','▼ Bajista', false),
+     ...patTraces],
     layout,
     {responsive:true,displayModeBar:true,modeBarButtonsToRemove:['select2d','lasso2d'],displaylogo:false}
   );
@@ -690,6 +800,55 @@ function renderZoneDivs(divs){
       <span class="dzone">🎯 ZONA</span>
       <span class="dlv">N${dv.level}</span>
       <span class="stime">${time}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderPatterns(patterns){
+  const el = document.getElementById('patterns-row');
+  if(!patterns||!patterns.length){ el.style.display='none'; return; }
+  el.style.display='grid';
+
+  const TYPE_NAMES = {M:'◭ Patrón M', W:'◮ Patrón W', HCH:'⊠ HCH Bajista', HCH_INV:'⊟ HCH Invertido'};
+  const DIR_NAMES  = {bearish:'BAJISTA', bullish:'ALCISTA'};
+  const DIR_COLORS = {bearish:'var(--bear)', bullish:'var(--bull)'};
+
+  el.innerHTML = patterns.map(p => {
+    const dir   = p.direction;
+    const st    = p.status;
+    const isBull= dir==='bullish';
+    const col   = st==='forming' ? 'var(--hbear)' : (isBull ? 'var(--bull)' : 'var(--bear)');
+    const cfPct = Math.round((p.confidence||0)*100);
+
+    const ptsHtml = (p.points||[]).map(pt =>
+      `<div class="pat-row">
+        <span class="pat-lbl">${pt.label}</span>
+        <span style="color:var(--text)">${fp(pt.y)}</span>
+        ${pt.rsi!=null?`<span style="color:var(--muted);margin-left:auto">RSI&nbsp;${pt.rsi.toFixed(1)}</span>`:''}
+      </div>`
+    ).join('');
+
+    const nk = p.neckline;
+    const nkHtml = nk
+      ? `<div class="pat-row"><span class="pat-lbl">NK</span><span style="color:var(--text)">${fp(nk.y1)}</span></div>`
+      : '';
+
+    const divBadge  = `<span class="pbadge${p.rsi_div?' on':''}">Div RSI${p.rsi_div?' ✓':''}</span>`;
+    const zoneBadge = p.in_zone ? `<span class="pbadge on">🎯 Zona</span>` : '';
+
+    return `<div class="pat-card ${dir} ${st==='forming'?'forming':''}">
+      <div class="pat-hdr">
+        <span class="pat-type ${st==='forming'?'forming':dir}">${TYPE_NAMES[p.type]||p.type}</span>
+        <span class="pat-dir ${dir}">${DIR_NAMES[dir]||dir}</span>
+        <span class="pat-status ${st}">${st==='confirmed'?'CONFIRMADO':'FORMANDO'}</span>
+      </div>
+      <div class="pat-pts">${ptsHtml}${nkHtml}</div>
+      <div class="pat-conf">
+        <div class="pat-cb"><div class="pat-cf" style="width:${cfPct}%;background:${col}"></div></div>
+        <span style="font-family:var(--fm);font-size:9px;color:var(--muted)">${cfPct}%</span>
+      </div>
+      <div class="pat-badges">${divBadge}${zoneBadge}</div>
+      <div class="pat-notes">${p.notes||''}</div>
     </div>`;
   }).join('');
 }

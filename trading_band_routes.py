@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import asyncio
 import time
+from patterns import detect_all_patterns
 
 router = APIRouter(prefix="/api/tradingband", tags=["TradingBand"])
 
@@ -330,9 +331,11 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
             all_divs   = detect_all_divergences(df_aligned, rsi_valid)
             times_all  = list(rsi_valid.index)
             rsi_segs   = build_rsi_div_segments(all_divs, rsi_valid, times_all)
+            patterns   = detect_all_patterns(df_aligned, rsi_valid, times_all)
         else:
             all_divs = []
             rsi_segs = []
+            patterns = []
 
         n = len(df_calc)
         timestamps = _ts(df_calc.index)
@@ -413,6 +416,7 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
             "divergences":  all_divs[:40],
             "zone_divergences": zone_divs[:10],
             "last_divergences": all_divs[:5],
+            "patterns":     patterns,
         }
 
         _cache[key] = {"ts": now, "data": result}
