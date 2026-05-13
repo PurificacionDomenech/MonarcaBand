@@ -874,6 +874,172 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     }
 
 
+# ─── ALERTAS POR CONFLUENCIAS DE TRADINGBAND ─────────────────
+
+async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
+    """
+    Alertas por confluencias de TradingBand:
+      1) Cruce Trigger/Average → cambio de tendencia
+      2) Divergencia RSI en zona (RSI≤45 alcista / RSI≥55 bajista)
+      3) Toque de nivel clave / fractal
+    Solo alerta si >=2 confluencias alineadas y el cruce ocurrió
+    en las últimas 2 velas 1h (≤2h de antigüedad).
+    """
+    if not HAS_NOTIFIER or not HAS_TB:
+        return {}
+    if _build_rb is None or _detect_divs is None:
+        return {}
+
+    now = time.time()
+    alerts_by_ticker: dict = {}
+
+    for t in tickers:
+        try:
+            cfg = _TB_CFG.get(t.upper(), _TB_CFG.get("_default"))
+
+            # 1h para precisión temporal (≤2h de antigüedad)
+            df = await async_download(t.upper(), period="3mo", interval="1h", progress=False)
+            if df.empty:
+                continue
+            df = clean_df(df)
+            df_calc = df.copy()
+            df_calc.columns = [c.lower() for c in df_calc.columns]
+            df_calc = df_calc.dropna(subset=["close"])
+            if len(df_calc) < 40:
+                continue
+
+            close  = df_calc["close"]
+            high   = df_calc["high"]
+            low    = df_calc["low"]
+
+            # TradingBand: SMA12(Trigger) + SMA12(Average)
+            trigger = close.rolling(12, min_periods=12).mean()
+            average = trigger.rolling(12, min_periods=12).mean()
+
+            # RSI (mismo cálculo que el chart)
+            rsi = _calc_rsi_tv(close, 14) if _calc_rsi_tv else None
+            if rsi is None or rsi.notna().sum() < 40:
+                continue
+
+            n = len(df_calc)
+            # Revisar últimas 2 velas
+            for offset in range(2):
+                i = n - 1 - offset
+                if i < 1:
+                    continue
+
+                # Filtro de antigüedad: candle <= 2h
+                ts = df_calc.index[i]
+                try:
+                    ts_parsed = pd.Timestamp(ts)
+                    if ts_parsed.tzinfo is None:
+                        ts_parsed = ts_parsed.tz_localize("UTC")
+                    age_h = (pd.Timestamp.now(tz="UTC") - ts_parsed).total_seconds() / 3600
+                    if age_h > 2:
+                        continue
+                except Exception:
+                    continue
+
+                t_now = trigger.iloc[i]
+                a_now = average.iloc[i]
+                t_prev = trigger.iloc[i - 1]
+                a_prev = average.iloc[i - 1]
+                if pd.isna(t_now) or pd.isna(a_now) or pd.isna(t_prev) or pd.isna(a_prev):
+                    continue
+
+                cross_up   = (t_now > a_now) and (t_prev <= a_prev)
+                cross_down = (t_now < a_now) and (t_prev >= a_prev)
+                if not cross_up and not cross_down:
+                    continue
+
+                direction = "bullish" if cross_up else "bearish"
+                price     = float(close.iloc[i])
+
+                # Divergencias recientes
+                df_slice = df_calc.iloc[:i + 1].copy()
+                rsi_slice = rsi.iloc[:i + 1].copy()
+                valid_mask = rsi_slice.notna()
+                divs = []
+                if valid_mask.sum() >= 40:
+                    df_aligned = df_slice[valid_mask].copy()
+                    rsi_valid  = rsi_slice[valid_mask]
+                    all_divs   = _detect_divs(df_aligned, rsi_valid)
+                    divs       = [d for d in all_divs if d.get("bar", 0) >= i - 40]
+
+                zone_divs = []
+                for d in divs:
+                    is_bull = d["type"] in ("bull", "hbull")
+                    is_bear = d["type"] in ("bear", "hbear")
+                    if direction == "bullish" and is_bull and d.get("in_zone"):
+                        zone_divs.append(d)
+                    elif direction == "bearish" and is_bear and d.get("in_zone"):
+                        zone_divs.append(d)
+
+                # Toque de nivel clave
+                main_cfg = get_cfg(t)
+                frac_touch = False
+                frac_info  = None
+                if main_cfg:
+                    fr = calc_fractales(price, main_cfg)
+                    ft = detect_fractal_touch(float(high.iloc[i]), float(low.iloc[i]), price, fr)
+                    frac_touch = ft["touch"]
+                    frac_info  = ft
+
+                # Construir confluencias
+                confluencias = [{
+                    "id": "tb_cross",
+                    "texto": f"TradingBand {direction.upper()}",
+                    "ok": True, "tipo": direction,
+                }]
+                if zone_divs:
+                    best = zone_divs[0]
+                    confluencias.append({
+                        "id": "rsi_div",
+                        "texto": f"Divergencia RSI {best['type'].upper()} N{best['level']} (RSI {best['rsi']})",
+                        "ok": True, "tipo": direction,
+                    })
+                if frac_touch:
+                    confluencias.append({
+                        "id": "fractal",
+                        "texto": f"Toque nivel clave ({frac_info['tipo'].upper()})",
+                        "ok": True, "tipo": direction,
+                    })
+
+                puntos = sum(1 for c in confluencias if c.get("ok"))
+                if puntos >= 2:
+                    # Dedup por combo de confluencias (así nuevas confluencias re-avisan)
+                    dedup = f"TB_CONF_{t}_{direction}_{'div' if zone_divs else ''}_{'frac' if frac_touch else ''}"
+                    if now - _sent_cache.get(dedup, 0) > _DEDUP_SECONDS:
+                        try:
+                            ts_utc = ts_parsed.tz_convert("UTC") if ts_parsed.tzinfo else ts_parsed.tz_localize("UTC")
+                            hora = ts_utc.strftime("%d/%m %H:%M")
+                            ts_iso = ts_utc.isoformat()
+                        except Exception:
+                            hora = ""
+                            ts_iso = ""
+
+                        resultado = {
+                            "ticker": t.upper(), "precio": price,
+                            "estado": "FAVORABLE" if puntos >= 3 else "INTERESANTE",
+                            "nivel": direction, "direction": direction,
+                            "puntos": puntos, "confluencias": confluencias,
+                            "alert": True,
+                        }
+                        alerts_by_ticker.setdefault(t.upper(), []).append({
+                            "nivel": direction,
+                            "msg": f"[{t.upper()}] {resultado['estado']} — {puntos} confluencias ({hora})",
+                            "hora": hora, "ts_utc_iso": ts_iso,
+                            "resultado": resultado,
+                        })
+                        _sent_cache[dedup] = now
+                        print(f"[tb-confl] {t} {direction} {puntos} confluencias @ {hora}")
+                        break  # sólo 1 alerta por ticker por ejecución
+        except Exception as e:
+            print(f"[tb-confl] Error en {t}: {e}")
+
+    return alerts_by_ticker
+
+
 # ─── SCHEDULER ───────────────────────────────────────────────
 
 
@@ -958,17 +1124,23 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
 
 
 async def scheduled_watch():
-    """Revisión periódica — analiza la última vela de cada ticker vigilado."""
+    """Revisión periódica — analiza la última vela + confluencias TradingBand."""
     if not HAS_NOTIFIER:
         return
+    # 1) Alertas de confluencia TradingBand (cruce Trigger/Average + div + nivel)
+    tb_alerts = await _check_tb_confluences(WATCH_TICKERS, label="scheduler")
+    if tb_alerts:
+        total = sum(len(v) for v in tb_alerts.values())
+        print(f"[scheduler] {total} alertas de TradingBand en {len(tb_alerts)} ticker(s)")
+        await notify_users_with_alerts(tb_alerts)
+
+    # 2) Alertas clásicas de confluencias EMA/RSI/fractales
     alerts_by_ticker = await _check_tickers(
         WATCH_TICKERS, num_candles=1, label="scheduler"
     )
     if alerts_by_ticker:
         total = sum(len(v) for v in alerts_by_ticker.values())
-        print(
-            f"[scheduler] {total} alertas nuevas en {len(alerts_by_ticker)} ticker(s)"
-        )
+        print(f"[scheduler] {total} alertas nuevas en {len(alerts_by_ticker)} ticker(s)")
         await notify_users_with_alerts(alerts_by_ticker)
     else:
         print("[scheduler] Sin alertas nuevas")
@@ -980,6 +1152,14 @@ async def daily_catchup():
     """Catch-up al arrancar: revisa SOLO la última vela (≤4h) — nada de más de 1h atrás."""
     if not HAS_NOTIFIER:
         return
+    # 1) Confluencias TradingBand (siempre frescas ≤2h)
+    tb_alerts = await _check_tb_confluences(WATCH_TICKERS, label="catchup")
+    if tb_alerts:
+        total = sum(len(v) for v in tb_alerts.values())
+        print(f"[catchup] {total} alertas TradingBand enviadas")
+        await notify_users_with_alerts(tb_alerts)
+
+    # 2) Alertas clásicas
     print("[catchup] Revisando vela actual (máx 1h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
         WATCH_TICKERS, num_candles=1, label="catchup", max_per_ticker=1
@@ -1262,10 +1442,12 @@ if HAS_SCHEDULER:
         try:
             scheduler = AsyncIOScheduler()
             scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
+            scheduler.add_job(_check_tb_confluences, "interval",
+                              minutes=5, id="tb_confl_5m")
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
-            print(f"[scheduler] Iniciado · revisión cada 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
+            print(f"[scheduler] Iniciado · TB confluencias cada 5 min + revisión 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
             # Catch-up: enviar alertas de las últimas 24h al arrancar
             asyncio.create_task(daily_catchup())
             asyncio.create_task(_warm_row_cache())
