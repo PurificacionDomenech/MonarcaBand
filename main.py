@@ -333,7 +333,8 @@ async def async_download_rb(ticker: str, label: str = "") -> tuple:
         return clean_df(df), "4h"
 
     tb_cfg = _get_tb_cfg(ticker)
-    range_size = tb_cfg.get("range", 0)
+    range_size = tb_cfg.get("range_calc", tb_cfg.get("range", 0))
+    range_display = tb_cfg.get("range", 1000)
 
     if range_size <= 0:
         df = await async_download(ticker, period="6mo", interval="4h", progress=False)
@@ -351,7 +352,7 @@ async def async_download_rb(ticker: str, label: str = "") -> tuple:
             "open": "Open", "high": "High", "low": "Low",
             "close": "Close", "volume": "Volume"
         })
-        return df, f"Rango {range_size}"
+        return df, f"Rango {range_display}"
     else:
         df.columns = [c.capitalize() for c in df.columns]
         return df, "5m"
@@ -1935,7 +1936,8 @@ async def get_chart(ticker: str):
         cfg = get_cfg(sym)
         es, el = cfg["ema_short"], cfg["ema_long"]
         tb_cfg = _TB_CFG.get(sym, _TB_CFG.get("_default", {}))
-        range_size = tb_cfg.get("range", 0)
+        range_size = tb_cfg.get("range_calc", tb_cfg.get("range", 0))
+        range_display = tb_cfg.get("range", 1000)
 
         use_rb = HAS_TB and _build_rb is not None and range_size > 0
         if use_rb:
@@ -1945,7 +1947,7 @@ async def get_chart(ticker: str):
             df_rb = _build_rb(df, range_size)
             if df_rb is not None and not df_rb.empty:
                 df = df_rb.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close","volume":"Volume"})
-                bar_type = f"Rango {range_size}"
+                bar_type = f"Rango {range_display}"
             else:
                 df.columns = [c.capitalize() for c in df.columns]
                 bar_type = "5m"

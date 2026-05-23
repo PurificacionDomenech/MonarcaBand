@@ -16,20 +16,21 @@ router = APIRouter(prefix="/api/tradingband", tags=["TradingBand"])
 # CONFIG POR ACTIVO
 # ──────────────────────────────────────────────────────────
 TB_CONFIG = {
-    "^DJI":    {"range": 1000, "ema_s": 200, "ema_l": 800, "name": "US30 · Dow Jones"},
-    "^NDX":    {"range": 1000, "ema_s": 200, "ema_l": 800, "name": "NAS100 · NASDAQ"},
-    "^GSPC":   {"range": 50,   "ema_s": 200, "ema_l": 800, "name": "SPX · S&P 500"},
-    "GC=F":    {"range": 50,   "ema_s": 200, "ema_l": 800, "name": "XAUUSD · Oro"},
-    "SI=F":    {"range": 0.5,  "ema_s": 200, "ema_l": 800, "name": "XAGUSD · Plata"},
-    "CL=F":    {"range": 2,    "ema_s": 200, "ema_l": 800, "name": "WTI · Petróleo"},
-    "USDJPY=X":{"range": 1,    "ema_s": 200, "ema_l": 800, "name": "USD/JPY"},
-    "GBPJPY=X":{"range": 1,    "ema_s": 200, "ema_l": 800, "name": "GBP/JPY"},
-    "EURUSD=X":{"range": 0.005,"ema_s": 200, "ema_l": 800, "name": "EUR/USD"},
-    "AUDUSD=X":{"range": 0.005,"ema_s": 200, "ema_l": 800, "name": "AUD/USD"},
-    "BTC-USD": {"range": 1000, "ema_s": 200, "ema_l": 800, "name": "BTC · Bitcoin"},
-    "GBPUSD=X":{"range": 0.005,"ema_s": 200, "ema_l": 800, "name": "GBP/USD"},
-    "AUDJPY=X":{"range": 1,    "ema_s": 200, "ema_l": 800, "name": "AUD/JPY"},
-    "_default":{"range": 50,   "ema_s": 200, "ema_l": 800, "name": "Activo"},
+    # range_display: etiqueta visual (todos 1000). range_calc: valor real para build_range_bars.
+    "^DJI":    {"range": 1000, "range_calc": 1000,    "ema_s": 200, "ema_l": 800, "name": "US30 · Dow Jones"},
+    "^NDX":    {"range": 1000, "range_calc": 1000,    "ema_s": 200, "ema_l": 800, "name": "NAS100 · NASDAQ"},
+    "^GSPC":   {"range": 1000, "range_calc": 80,     "ema_s": 200, "ema_l": 800, "name": "SPX · S&P 500"},
+    "GC=F":    {"range": 1000, "range_calc": 15,     "ema_s": 200, "ema_l": 800, "name": "XAUUSD · Oro"},
+    "SI=F":    {"range": 1000, "range_calc": 0.15,   "ema_s": 200, "ema_l": 800, "name": "XAGUSD · Plata"},
+    "CL=F":    {"range": 1000, "range_calc": 0.5,    "ema_s": 200, "ema_l": 800, "name": "WTI · Petróleo"},
+    "USDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 200, "ema_l": 800, "name": "USD/JPY"},
+    "GBPJPY=X":{"range": 1000, "range_calc": 0.6,    "ema_s": 200, "ema_l": 800, "name": "GBP/JPY"},
+    "EURUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 200, "ema_l": 800, "name": "EUR/USD"},
+    "AUDUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 200, "ema_l": 800, "name": "AUD/USD"},
+    "BTC-USD": {"range": 1000, "range_calc": 1000,   "ema_s": 200, "ema_l": 800, "name": "BTC · Bitcoin"},
+    "GBPUSD=X":{"range": 1000, "range_calc": 0.004,  "ema_s": 200, "ema_l": 800, "name": "GBP/USD"},
+    "AUDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 200, "ema_l": 800, "name": "AUD/JPY"},
+    "_default":{"range": 1000, "range_calc": 50,     "ema_s": 200, "ema_l": 800, "name": "Activo"},
 }
 
 _yf_lock = asyncio.Lock()
@@ -498,9 +499,10 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
         df = _clean(raw)
 
         if use_range_bars:
-            rb = build_range_bars(df, cfg["range"])
+            range_calc = cfg.get("range_calc", cfg.get("range"))
+            rb = build_range_bars(df, range_calc)
             df_calc = rb if (rb is not None and not rb.empty) else df
-            bar_type = f"Range {cfg['range']}"
+            bar_type = f"Range {cfg.get('range', 1000)}"
         else:
             df_calc = df
             bar_type = "4h"
