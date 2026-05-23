@@ -35,7 +35,7 @@ TB_CONFIG = {
 
 _yf_lock = asyncio.Lock()
 _cache: dict = {}
-_CACHE_TTL = 300
+_CACHE_TTL = 60
 
 # ──────────────────────────────────────────────────────────
 # FUNCIONES MATEMÁTICAS

@@ -86,7 +86,7 @@ _sent_cache: dict = {}
 _DEDUP_SECONDS = 1 * 3600  # 1 hora máximo para alertas recientes
 
 _row_cache: dict = {}
-_ROW_TTL = 300
+_ROW_TTL = 60
 _yf_lock = asyncio.Lock()
 
 _rsi_watchlist: dict = {}
@@ -2082,6 +2082,24 @@ async def get_chart(ticker: str):
         return {"error": str(e)}
 
 
+async def _get_current_price(ticker: str) -> float | None:
+    """Obtiene precio actual de yfinance (rápido)."""
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        info = t.info
+        price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+        if price:
+            return float(price)
+        # Fallback: último minuto
+        df = yf.download(ticker, period="1d", interval="1m", progress=False)
+        if not df.empty:
+            return float(df["Close"].iloc[-1])
+    except Exception:
+        pass
+    return None
+
+
 async def _compute_row(ticker: str) -> dict:
     key = ticker.upper()
     now = time.time()
@@ -2093,6 +2111,26 @@ async def _compute_row(ticker: str) -> dict:
     df, bar_type = await async_download_rb(key)
     if df.empty:
         return {"error": "not found"}
+
+    # ——— INYECTAR PRECIO ACTUAL ———
+    # Obtener precio en tiempo real y agregar como última fila "fantasma"
+    # para que la evaluación siempre use el precio más reciente
+    live_price = await _get_current_price(key)
+    if live_price and not df.empty:
+        last_close = float(df["Close"].iloc[-1])
+        # Solo inyectar si hay diferencia significativa (>0.05%)
+        if abs(live_price - last_close) / last_close > 0.0005:
+            last_idx = df.index[-1]
+            new_idx = last_idx + pd.Timedelta(minutes=1)
+            ghost = pd.DataFrame({
+                "Open": [live_price], "High": [max(live_price, last_close)],
+                "Low":  [min(live_price, last_close)], "Close": [live_price],
+                "Volume": [0.0],
+            }, index=[new_idx])
+            df = pd.concat([df, ghost])
+            df.sort_index(inplace=True)
+    # ——— FIN INYECCIÓN ———
+
     df = calc_indicators(df, es, el)
     df = calc_trading_band(df)
     last, first = float(df["Close"].iloc[-1]), float(df["Close"].iloc[0])
