@@ -799,8 +799,10 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             "texto": "Datos de apertura no disponibles", "tipo": "info"})
 
     # ⑤ Fibonacci 55.9% (neutral — nivel de precio, no implica dirección)
-    high_p = float(df["High"].max())
-    low_p  = float(df["Low"].min())
+    # Usar rango reciente (últimos 100 range bars / ~5 días) en vez de todo el histórico
+    recent_df = df.tail(100) if len(df) > 100 else df
+    high_p = float(recent_df["High"].max())
+    low_p  = float(recent_df["Low"].min())
     fib559 = high_p - (high_p - low_p) * 0.559
     tol_f  = (high_p - low_p) * 0.015
     if abs(price - fib559) <= tol_f:
