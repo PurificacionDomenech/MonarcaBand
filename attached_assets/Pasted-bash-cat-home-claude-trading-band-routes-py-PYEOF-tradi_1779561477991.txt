@@ -1,0 +1,724 @@
+bash
+
+cat > /home/claude/trading_band_routes.py << 'PYEOF'
+"""
+trading_band_routes.py
+======================
+Rango 1000 universal para todos los activos.
+Las barras de rango se construyen sobre datos de 1m (máximo histórico disponible).
+Todos los indicadores (MonarcaBand, EMA, RSI, divergencias, patrones) se calculan
+sobre esas barras de rango, no sobre tiempo.
+
+Gráfico principal en escala 0-100 (normalizado como RSI):
+  - Precio, MonarcaBand, EMAs → normalizados al rango de precios visible
+  - Fractales → líneas horizontales en esa misma escala 0-100
+  - RSI + divergencias → panel inferior nativo 0-100
+  - Patrones M/W/HCH → detectados y dibujados en escala normalizada
+"""
+
+import numpy as np
+import pandas as pd
+import asyncio
+import yfinance as yf
+
+from fastapi import APIRouter
+
+router = APIRouter()
+
+# ─── RANGO UNIVERSAL ─────────────────────────────────────────
+RANGE_SIZE = 1000  # puntos de precio por barra, igual para todos los activos
+
+TB_CONFIG = {
+    "_default": {"range": RANGE_SIZE, "ema_short": 200, "ema_long": 800},
+}
+
+ASSET_NAMES = {
+    "^DJI":     "US30 · Dow Jones",
+    "^NDX":     "NAS100 · Nasdaq",
+    "^GSPC":    "SPX · S&P 500",
+    "^RUT":     "RTY · Russell 2000",
+    "GC=F":     "XAUUSD · Oro",
+    "SI=F":     "XAGUSD · Plata",
+    "CL=F":     "WTI · Petróleo",
+    "USDJPY=X": "USD/JPY",
+    "GBPJPY=X": "GBP/JPY",
+    "EURUSD=X": "EUR/USD",
+    "AUDUSD=X": "AUD/USD",
+    "GBPUSD=X": "GBP/USD",
+    "AUDJPY=X": "AUD/JPY",
+    "BTC-USD":  "BTC · Bitcoin",
+    "ETH-USD":  "ETH · Ethereum",
+}
+
+FRACTAL_CFG = {
+    "^DJI":     {"key_spacing": 500,   "major_spacing": 1000,  "zone_size": 100},
+    "^NDX":     {"key_spacing": 500,   "major_spacing": 1000,  "zone_size": 100},
+    "^GSPC":    {"key_spacing": 50,    "major_spacing": 100,   "zone_size": 10},
+    "^RUT":     {"key_spacing": 25,    "major_spacing": 50,    "zone_size": 5},
+    "GC=F":     {"key_spacing": 50,    "major_spacing": 100,   "zone_size": 10},
+    "SI=F":     {"key_spacing": 1,     "major_spacing": 5,     "zone_size": 0.25},
+    "CL=F":     {"key_spacing": 2,     "major_spacing": 5,     "zone_size": 0.5},
+    "USDJPY=X": {"key_spacing": 1,     "major_spacing": 5,     "zone_size": 0.25},
+    "GBPJPY=X": {"key_spacing": 1,     "major_spacing": 5,     "zone_size": 0.25},
+    "EURUSD=X": {"key_spacing": 0.005, "major_spacing": 0.01,  "zone_size": 0.001},
+    "AUDUSD=X": {"key_spacing": 0.005, "major_spacing": 0.01,  "zone_size": 0.001},
+    "GBPUSD=X": {"key_spacing": 0.005, "major_spacing": 0.01,  "zone_size": 0.001},
+    "AUDJPY=X": {"key_spacing": 1,     "major_spacing": 5,     "zone_size": 0.25},
+    "BTC-USD":  {"key_spacing": 1000,  "major_spacing": 5000,  "zone_size": 250},
+    "ETH-USD":  {"key_spacing": 50,    "major_spacing": 200,   "zone_size": 25},
+    "_default": {"key_spacing": 500,   "major_spacing": 1000,  "zone_size": 100},
+}
+
+# ─── LOCK ────────────────────────────────────────────────────
+_yf_lock = asyncio.Lock()
+
+
+async def _download(ticker: str, **kwargs) -> pd.DataFrame:
+    loop = asyncio.get_running_loop()
+    async with _yf_lock:
+        return await loop.run_in_executor(
+            None, lambda: yf.download(ticker, progress=False, **kwargs)
+        )
+
+
+def _clean(df: pd.DataFrame) -> pd.DataFrame:
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
+
+
+# ─── RANGE BARS ──────────────────────────────────────────────
+
+def build_range_bars(df: pd.DataFrame, range_size: float) -> pd.DataFrame | None:
+    """
+    Construye barras de rango puro.
+    Cada barra se cierra cuando High - Low >= range_size.
+    La barra siguiente abre en el cierre de la anterior.
+    """
+    if range_size <= 0 or df.empty:
+        return None
+
+    df = df.copy()
+    df.columns = [c.lower() for c in df.columns]
+    required = {"open", "high", "low", "close"}
+    if not required.issubset(set(df.columns)):
+        return None
+
+    bars   = []
+    o = h = l = c = ts = None
+
+    for idx, row in df.iterrows():
+        px = float(row["close"])
+        if np.isnan(px):
+            continue
+
+        if o is None:
+            # Nueva barra: abre en cierre anterior (o en precio actual si es la primera)
+            o = px
+            h = px
+            l = px
+            ts = idx
+
+        # Actualizar high/low tick a tick
+        if px > h:
+            h = px
+        if px < l:
+            l = px
+        c = px
+
+        # ¿La barra alcanzó el rango?
+        if (h - l) >= range_size:
+            bars.append({
+                "x":      ts,
+                "Open":   o,
+                "High":   h,
+                "Low":    l,
+                "Close":  c,
+                "Volume": float(row.get("volume", 0)),
+            })
+            # La siguiente barra abre donde cerró esta
+            o = c
+            h = c
+            l = c
+            ts = idx  # timestamp del primer tick de la nueva barra
+
+    if not bars:
+        return None
+
+    rb = pd.DataFrame(bars).set_index("x")
+    return rb
+
+
+# ─── INDICADORES ─────────────────────────────────────────────
+
+def calc_monarca_band(close: pd.Series, period: int = 12):
+    """SMA(close, 12) = Trigger  |  SMA(Trigger, 12) = Average"""
+    trigger = close.rolling(period, min_periods=period).mean()
+    average = trigger.rolling(period, min_periods=period).mean()
+    return trigger, average
+
+
+def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta    = close.diff()
+    gain     = delta.clip(lower=0)
+    loss     = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs       = avg_gain / avg_loss.replace(0, np.nan)
+    return (100 - 100 / (1 + rs)).fillna(50)
+
+
+def calc_ema(close: pd.Series, period: int) -> pd.Series:
+    return close.ewm(span=period, adjust=False).mean()
+
+
+# ─── NORMALIZACIÓN 0-100 ─────────────────────────────────────
+
+def normalize_value(val: float, lo: float, hi: float) -> float:
+    rng = hi - lo
+    if rng == 0:
+        return 50.0
+    return float(np.clip((val - lo) / rng * 100, 0, 100))
+
+
+# ─── FRACTALES ───────────────────────────────────────────────
+
+def calc_fractal_levels(price: float, cfg: dict, n: int = 20) -> list[dict]:
+    ks = cfg.get("key_spacing", 500)
+    ms = cfg.get("major_spacing", 1000)
+    zs = cfg.get("zone_size", 100)
+    base = round(price / ks) * ks
+    levels = []
+    for i in range(-n, n + 1):
+        p = round(base + i * ks, 8)
+        is_major = abs(round(p / ms) * ms - p) < ks * 0.01
+        levels.append({
+            "price":    p,
+            "is_major": is_major,
+            "zone_top": p + zs,
+            "zone_bot": p - zs,
+        })
+    return levels
+
+
+# ─── DIVERGENCIAS RSI 3 NIVELES ──────────────────────────────
+
+def _pivots_low(series: pd.Series, lb: int) -> list[int]:
+    arr = series.values
+    out = []
+    for i in range(lb, len(arr) - lb):
+        v = arr[i]
+        if np.isnan(v):
+            continue
+        if all(arr[i - lb:i] >= v) and all(arr[i + 1:i + lb + 1] >= v):
+            out.append(i)
+    return out
+
+
+def _pivots_high(series: pd.Series, lb: int) -> list[int]:
+    arr = series.values
+    out = []
+    for i in range(lb, len(arr) - lb):
+        v = arr[i]
+        if np.isnan(v):
+            continue
+        if all(arr[i - lb:i] <= v) and all(arr[i + 1:i + lb + 1] <= v):
+            out.append(i)
+    return out
+
+
+def detect_all_divergences(
+    close: pd.Series,
+    rsi: pd.Series,
+    low: pd.Series,
+    high: pd.Series,
+    ts_ms: list,
+) -> list[dict]:
+    """Divergencias RSI en 3 niveles sobre barras de rango."""
+
+    LEVELS = [
+        {"level": 1, "lb": 5,  "rn_l": 5,  "rn_u": 60},
+        {"level": 2, "lb": 10, "rn_l": 10, "rn_u": 150},
+        {"level": 3, "lb": 20, "rn_l": 20, "rn_u": 400},
+    ]
+
+    divs = []
+
+    for cfg in LEVELS:
+        lb    = cfg["lb"]
+        rn_l  = cfg["rn_l"]
+        rn_u  = cfg["rn_u"]
+        level = cfg["level"]
+
+        pl = _pivots_low(rsi, lb)
+        ph = _pivots_high(rsi, lb)
+
+        # ── Regular Alcista: precio LL, RSI HL ─────────────
+        for k in range(1, len(pl)):
+            i1, i2 = pl[k - 1], pl[k]
+            gap = i2 - i1
+            if not (rn_l <= gap <= rn_u):
+                continue
+            if float(low.iloc[i2]) < float(low.iloc[i1]) and float(rsi.iloc[i2]) > float(rsi.iloc[i1]):
+                divs.append(_div(ts_ms, close, rsi, i1, i2, "bull", level))
+
+        # ── Regular Bajista: precio HH, RSI LH ─────────────
+        for k in range(1, len(ph)):
+            i1, i2 = ph[k - 1], ph[k]
+            gap = i2 - i1
+            if not (rn_l <= gap <= rn_u):
+                continue
+            if float(high.iloc[i2]) > float(high.iloc[i1]) and float(rsi.iloc[i2]) < float(rsi.iloc[i1]):
+                divs.append(_div(ts_ms, close, rsi, i1, i2, "bear", level))
+
+        # ── Oculta Alcista: precio HL, RSI LL ──────────────
+        for k in range(1, len(pl)):
+            i1, i2 = pl[k - 1], pl[k]
+            gap = i2 - i1
+            if not (rn_l <= gap <= rn_u):
+                continue
+            if float(low.iloc[i2]) > float(low.iloc[i1]) and float(rsi.iloc[i2]) < float(rsi.iloc[i1]):
+                divs.append(_div(ts_ms, close, rsi, i1, i2, "hbull", level))
+
+        # ── Oculta Bajista: precio LH, RSI HH ──────────────
+        for k in range(1, len(ph)):
+            i1, i2 = ph[k - 1], ph[k]
+            gap = i2 - i1
+            if not (rn_l <= gap <= rn_u):
+                continue
+            if float(high.iloc[i2]) < float(high.iloc[i1]) and float(rsi.iloc[i2]) > float(rsi.iloc[i1]):
+                divs.append(_div(ts_ms, close, rsi, i1, i2, "hbear", level))
+
+    divs.sort(key=lambda x: x["time"], reverse=True)
+    return divs
+
+
+def _div(ts_ms, close, rsi, i1, i2, dtype, level):
+    r2   = float(rsi.iloc[i2])
+    zone = (r2 <= 35) if dtype in ("bull", "hbull") else (r2 >= 65)
+    return {
+        "type":       dtype,
+        "level":      level,
+        "time_prev":  ts_ms[i1],
+        "time":       ts_ms[i2],
+        "price_prev": float(close.iloc[i1]),
+        "price":      float(close.iloc[i2]),
+        "rsi_prev":   float(rsi.iloc[i1]),
+        "rsi":        r2,
+        "in_zone":    zone,
+    }
+
+
+# ─── PATRONES M / W / HCH ────────────────────────────────────
+
+def _ph(s: pd.Series, lb: int) -> list[int]:
+    arr = s.values
+    out = []
+    for i in range(lb, len(arr) - lb):
+        v = arr[i]
+        if all(arr[max(0,i-lb):i] <= v) and all(arr[i+1:i+lb+1] <= v):
+            out.append(i)
+    return out
+
+
+def _pl(s: pd.Series, lb: int) -> list[int]:
+    arr = s.values
+    out = []
+    for i in range(lb, len(arr) - lb):
+        v = arr[i]
+        if all(arr[max(0,i-lb):i] >= v) and all(arr[i+1:i+lb+1] >= v):
+            out.append(i)
+    return out
+
+
+def _safe_rsi(rsi, i):
+    v = float(rsi.iloc[i])
+    return v if not np.isnan(v) else 50.0
+
+
+def detect_patterns(df: pd.DataFrame, rsi: pd.Series, ts_ms: list) -> list[dict]:
+    high   = df["High"]
+    low    = df["Low"]
+    close  = df["Close"]
+    patterns = []
+
+    # ── Doble Techo M ──────────────────────────────────────
+    for b1, b2 in _pairs(_ph(high, 5), 8, 150):
+        p1, p2 = float(high.iloc[b1]), float(high.iloc[b2])
+        if abs(p2 - p1) / p1 > 0.025:
+            continue
+        valley = low.iloc[b1:b2+1]
+        bv     = b1 + int(np.argmin(valley.values))
+        nk     = float(valley.min())
+        if nk > min(p1, p2) * 0.997:
+            continue
+        r1, r2 = _safe_rsi(rsi, b1), _safe_rsi(rsi, b2)
+        confirmed = b2+1 < len(low) and float(low.iloc[b2+1:].min()) < nk
+        patterns.append(_pat("M", "bearish", b1, b2, confirmed, r2 < r1-2, r2 >= 55,
+            [{"label":"P1","x":ts_ms[b1],"y":round(p1,6),"rsi":round(r1,1)},
+             {"label":"P2","x":ts_ms[b2],"y":round(p2,6),"rsi":round(r2,1)}],
+            {"x":ts_ms[bv],"y":round(nk,6)},
+            {"x1":ts_ms[b1],"x2":ts_ms[b2],"y1":round(nk,6),"y2":round(nk,6)},
+            f"P1={p1:.5g} P2={p2:.5g} NK={nk:.5g}"))
+
+    # ── Doble Suelo W ──────────────────────────────────────
+    for b1, b2 in _pairs(_pl(low, 5), 8, 150):
+        v1, v2 = float(low.iloc[b1]), float(low.iloc[b2])
+        if abs(v2 - v1) / v1 > 0.025:
+            continue
+        peak   = high.iloc[b1:b2+1]
+        bp     = b1 + int(np.argmax(peak.values))
+        nk     = float(peak.max())
+        if nk < max(v1, v2) * 1.003:
+            continue
+        r1, r2 = _safe_rsi(rsi, b1), _safe_rsi(rsi, b2)
+        confirmed = b2+1 < len(high) and float(high.iloc[b2+1:].max()) > nk
+        patterns.append(_pat("W", "bullish", b1, b2, confirmed, r2 > r1+2, r2 <= 45,
+            [{"label":"V1","x":ts_ms[b1],"y":round(v1,6),"rsi":round(r1,1)},
+             {"label":"V2","x":ts_ms[b2],"y":round(v2,6),"rsi":round(r2,1)}],
+            {"x":ts_ms[bp],"y":round(nk,6)},
+            {"x1":ts_ms[b1],"x2":ts_ms[b2],"y1":round(nk,6),"y2":round(nk,6)},
+            f"V1={v1:.5g} V2={v2:.5g} NK={nk:.5g}"))
+
+    # ── HCH Bajista ────────────────────────────────────────
+    ph_idx = _ph(high, 5)
+    for i in range(len(ph_idx)-2):
+        bLS, bH, bRS = ph_idx[i], ph_idx[i+1], ph_idx[i+2]
+        if bH-bLS < 8 or bRS-bH < 8 or bH-bLS > 120 or bRS-bH > 120:
+            continue
+        pLS, pH, pRS = float(high.iloc[bLS]), float(high.iloc[bH]), float(high.iloc[bRS])
+        if pH <= pLS or pH <= pRS or abs(pRS-pLS)/pLS > 0.05:
+            continue
+        v1 = float(low.iloc[bLS:bH+1].min())
+        v2 = float(low.iloc[bH:bRS+1].min())
+        bV1 = bLS + int(np.argmin(low.iloc[bLS:bH+1].values))
+        bV2 = bH  + int(np.argmin(low.iloc[bH:bRS+1].values))
+        rLS, rH, rRS = _safe_rsi(rsi,bLS), _safe_rsi(rsi,bH), _safe_rsi(rsi,bRS)
+        confirmed = bRS+1 < len(low) and float(low.iloc[bRS+1:].min()) < (v1+v2)/2
+        patterns.append(_pat("HCH","bearish",bLS,bRS,confirmed,rRS<rLS-2,rRS>=55,
+            [{"label":"HI","x":ts_ms[bLS],"y":round(pLS,6),"rsi":round(rLS,1)},
+             {"label":"CAB","x":ts_ms[bH],"y":round(pH,6),"rsi":round(rH,1)},
+             {"label":"HD","x":ts_ms[bRS],"y":round(pRS,6),"rsi":round(rRS,1)}],
+            None,
+            {"x1":ts_ms[bV1],"x2":ts_ms[bV2],"y1":round(v1,6),"y2":round(v2,6)},
+            f"HI={pLS:.5g} CAB={pH:.5g} HD={pRS:.5g}"))
+
+    # ── HCH Invertido Alcista ──────────────────────────────
+    pl_idx = _pl(low, 5)
+    for i in range(len(pl_idx)-2):
+        bLS, bH, bRS = pl_idx[i], pl_idx[i+1], pl_idx[i+2]
+        if bH-bLS < 8 or bRS-bH < 8 or bH-bLS > 120 or bRS-bH > 120:
+            continue
+        pLS, pH, pRS = float(low.iloc[bLS]), float(low.iloc[bH]), float(low.iloc[bRS])
+        if pH >= pLS or pH >= pRS or abs(pRS-pLS)/pLS > 0.05:
+            continue
+        p1 = float(high.iloc[bLS:bH+1].max())
+        p2 = float(high.iloc[bH:bRS+1].max())
+        bP1 = bLS + int(np.argmax(high.iloc[bLS:bH+1].values))
+        bP2 = bH  + int(np.argmax(high.iloc[bH:bRS+1].values))
+        rLS, rH, rRS = _safe_rsi(rsi,bLS), _safe_rsi(rsi,bH), _safe_rsi(rsi,bRS)
+        confirmed = bRS+1 < len(high) and float(high.iloc[bRS+1:].max()) > (p1+p2)/2
+        patterns.append(_pat("HCH_INV","bullish",bLS,bRS,confirmed,rRS>rLS+2,rRS<=45,
+            [{"label":"HI","x":ts_ms[bLS],"y":round(pLS,6),"rsi":round(rLS,1)},
+             {"label":"CAB","x":ts_ms[bH],"y":round(pH,6),"rsi":round(rH,1)},
+             {"label":"HD","x":ts_ms[bRS],"y":round(pRS,6),"rsi":round(rRS,1)}],
+            None,
+            {"x1":ts_ms[bP1],"x2":ts_ms[bP2],"y1":round(p1,6),"y2":round(p2,6)},
+            f"HI={pLS:.5g} CAB={pH:.5g} HD={pRS:.5g}"))
+
+    patterns.sort(key=lambda x: x["bar2"], reverse=True)
+    return patterns[:6]
+
+
+def _pairs(idx_list: list[int], min_gap: int, max_gap: int):
+    for i in range(len(idx_list)-1):
+        b1 = idx_list[i]
+        for j in range(i+1, len(idx_list)):
+            b2 = idx_list[j]
+            gap = b2 - b1
+            if gap < min_gap:
+                continue
+            if gap > max_gap:
+                break
+            yield b1, b2
+
+
+def _pat(ptype, direction, bar1, bar2, confirmed, rsi_div, in_zone,
+         points, mid, neckline, notes):
+    conf = min(1.0,
+        (0.35 if rsi_div  else 0) +
+        (0.30 if confirmed else 0) +
+        (0.20 if in_zone  else 0) +
+        0.15)
+    return {
+        "type":       ptype,
+        "direction":  direction,
+        "status":     "confirmed" if confirmed else "forming",
+        "confidence": round(conf, 2),
+        "rsi_div":    rsi_div,
+        "in_zone":    in_zone,
+        "notes":      notes,
+        "points":     points,
+        "mid":        mid,
+        "neckline":   neckline,
+        "bar1":       bar1,
+        "bar2":       bar2,
+    }
+
+
+# ─── SEÑALES ─────────────────────────────────────────────────
+
+def calc_signals(close, trigger, average, rsi, ts_ms):
+    signals = []
+    for i in range(1, len(close)):
+        c  = float(close.iloc[i])
+        r  = float(rsi.iloc[i])  if pd.notna(rsi.iloc[i])  else None
+        tp = float(trigger.iloc[i-1]) if pd.notna(trigger.iloc[i-1]) else None
+        tn = float(trigger.iloc[i])   if pd.notna(trigger.iloc[i])   else None
+        ap = float(average.iloc[i-1]) if pd.notna(average.iloc[i-1]) else None
+        an = float(average.iloc[i])   if pd.notna(average.iloc[i])   else None
+
+        if all(v is not None for v in [tp, tn, ap, an]):
+            if tp <= ap and tn > an:
+                signals.append({"type":"tb_up",   "x":ts_ms[i], "price":c,
+                                 "label":"▲ MonarcaBand Alcista", "rsi":r})
+            elif tp >= ap and tn < an:
+                signals.append({"type":"tb_down",  "x":ts_ms[i], "price":c,
+                                 "label":"▼ MonarcaBand Bajista", "rsi":r})
+
+        if r is not None:
+            rp = float(rsi.iloc[i-1]) if pd.notna(rsi.iloc[i-1]) else None
+            if rp is not None:
+                if rp > 30 >= r:
+                    signals.append({"type":"rsi_os", "x":ts_ms[i], "price":c,
+                                     "label":"▲ RSI Sobreventa", "rsi":r, "rsi_val":r})
+                elif rp < 70 <= r:
+                    signals.append({"type":"rsi_ob", "x":ts_ms[i], "price":c,
+                                     "label":"▼ RSI Sobrecompra", "rsi":r, "rsi_val":r})
+    signals.reverse()
+    return signals[:60]
+
+
+# ─── ENDPOINT ────────────────────────────────────────────────
+
+@router.get("/api/tradingband/signal/{ticker}")
+async def get_tradingband_signal(ticker: str, use_range_bars: bool = True):
+    try:
+        sym       = ticker.upper()
+        frac_cfg  = FRACTAL_CFG.get(sym, FRACTAL_CFG["_default"])
+        ema_short = 200
+        ema_long  = 800
+
+        # ── Descarga datos base (1m, 7 días máx en yfinance) ──
+        # Para más historia usamos 5m (60 días) que da suficientes barras de rango 1000
+        bar_type = f"Rango {RANGE_SIZE}"
+        df_raw   = await _download(sym, period="60d", interval="5m")
+        df       = _clean(df_raw)
+
+        if df.empty:
+            return {"error": f"Sin datos para {ticker}"}
+
+        df.columns = [c.lower() for c in df.columns]
+        rb = build_range_bars(df, RANGE_SIZE) if use_range_bars else None
+
+        if rb is not None and len(rb) >= 30:
+            df = rb
+            bar_type = f"Rango {RANGE_SIZE}"
+        else:
+            # Fallback: 4H convencional si no hay suficientes barras de rango
+            df_raw4 = await _download(sym, period="2y", interval="4h")
+            df      = _clean(df_raw4)
+            bar_type = "4H (fallback)"
+
+        if df.empty or len(df) < 30:
+            return {"error": "Datos insuficientes"}
+
+        close = df["Close"].squeeze().astype(float)
+        high  = df["High"].squeeze().astype(float)
+        low   = df["Low"].squeeze().astype(float)
+        opn   = df["Open"].squeeze().astype(float)
+
+        # ── Indicadores sobre barras de rango ────────────────
+        trigger, average = calc_monarca_band(close, 12)
+        rsi_s            = calc_rsi(close, 14)
+        ema_s            = calc_ema(close, ema_short)
+        ema_l            = calc_ema(close, ema_long)
+
+        # ── Timestamps ───────────────────────────────────────
+        ts_ms = [int(pd.Timestamp(t).timestamp() * 1000) for t in df.index]
+
+        # ── Normalización 0-100 sobre ventana deslizante ─────
+        W = min(300, len(close))   # ventana para el min/max local
+
+        roll_hi = close.rolling(W, min_periods=1).max()
+        roll_lo = close.rolling(W, min_periods=1).min()
+
+        def nv(val, i):
+            return normalize_value(float(val), float(roll_lo.iloc[i]), float(roll_hi.iloc[i]))
+
+        def norm_series(s: pd.Series) -> list[dict]:
+            out = []
+            for i in range(len(s)):
+                v = s.iloc[i]
+                if pd.notna(v):
+                    out.append({"x": ts_ms[i], "y": round(nv(v, i), 3)})
+            return out
+
+        # Candles normalizadas
+        candles = []
+        for i in range(len(df)):
+            hi_i = float(roll_hi.iloc[i])
+            lo_i = float(roll_lo.iloc[i])
+            candles.append({
+                "x": ts_ms[i],
+                "o": round(normalize_value(float(opn.iloc[i]),   lo_i, hi_i), 3),
+                "h": round(normalize_value(float(high.iloc[i]),  lo_i, hi_i), 3),
+                "l": round(normalize_value(float(low.iloc[i]),   lo_i, hi_i), 3),
+                "c": round(normalize_value(float(close.iloc[i]), lo_i, hi_i), 3),
+            })
+
+        trig_norm  = norm_series(trigger)
+        avg_norm   = norm_series(average)
+        ema_s_norm = norm_series(ema_s)
+        ema_l_norm = norm_series(ema_l)
+        close_norm = norm_series(close)
+
+        # Cruces MonarcaBand (posición normalizada del Average)
+        tb_crosses = []
+        for i in range(1, len(trigger)):
+            if pd.isna(trigger.iloc[i]) or pd.isna(average.iloc[i]):
+                continue
+            tp_, tn_ = float(trigger.iloc[i-1]), float(trigger.iloc[i])
+            ap_, an_ = float(average.iloc[i-1]), float(average.iloc[i])
+            if pd.isna(tp_) or pd.isna(ap_):
+                continue
+            y_norm = nv(float(average.iloc[i]), i)
+            if tp_ <= ap_ and tn_ > an_:
+                tb_crosses.append({"x": ts_ms[i], "y": round(y_norm, 3), "dir": 1})
+            elif tp_ >= ap_ and tn_ < an_:
+                tb_crosses.append({"x": ts_ms[i], "y": round(y_norm, 3), "dir": -1})
+
+        # RSI señales sobre gráfico normalizado
+        rsi_os_pts, rsi_ob_pts = [], []
+        for i in range(1, len(rsi_s)):
+            r  = float(rsi_s.iloc[i])   if pd.notna(rsi_s.iloc[i])   else None
+            rp = float(rsi_s.iloc[i-1]) if pd.notna(rsi_s.iloc[i-1]) else None
+            if r is None or rp is None:
+                continue
+            cn = nv(float(close.iloc[i]), i)
+            if rp > 30 >= r:
+                rsi_os_pts.append({"x": ts_ms[i], "y": round(cn, 3), "rsi": round(r, 1)})
+            elif rp < 70 <= r:
+                rsi_ob_pts.append({"x": ts_ms[i], "y": round(cn, 3), "rsi": round(r, 1)})
+
+        # Panel RSI
+        rsi_panel = []
+        for i in range(len(rsi_s)):
+            rv = float(rsi_s.iloc[i])
+            if pd.notna(rv):
+                zone = "ob" if rv >= 70 else ("os" if rv <= 30 else "")
+                rsi_panel.append({"x": ts_ms[i], "y": round(rv, 2), "zone": zone})
+
+        # ── Fractales normalizados ────────────────────────────
+        last_price = float(close.iloc[-1])
+        last_hi    = float(roll_hi.iloc[-1])
+        last_lo    = float(roll_lo.iloc[-1])
+        frac_raw   = calc_fractal_levels(last_price, frac_cfg, n=12)
+        frac_norm  = []
+        for fl in frac_raw:
+            yn = normalize_value(fl["price"], last_lo, last_hi)
+            if 1 <= yn <= 99:
+                frac_norm.append({
+                    "price_raw": fl["price"],
+                    "y":         round(yn, 3),
+                    "is_major":  fl["is_major"],
+                    "zone_top":  round(normalize_value(fl["zone_top"], last_lo, last_hi), 3),
+                    "zone_bot":  round(normalize_value(fl["zone_bot"], last_lo, last_hi), 3),
+                })
+
+        # ── Divergencias ─────────────────────────────────────
+        divergences = detect_all_divergences(close, rsi_s, low, high, ts_ms)
+        zone_divs   = [d for d in divergences if d.get("in_zone")]
+
+        rsi_div_segs = [{
+            "type":    d["type"],
+            "level":   d["level"],
+            "x1":      d["time_prev"],
+            "x2":      d["time"],
+            "y1":      round(d["rsi_prev"], 2),
+            "y2":      round(d["rsi"], 2),
+            "in_zone": d["in_zone"],
+        } for d in divergences[:80]]
+
+        # ── Patrones ─────────────────────────────────────────
+        patterns = detect_patterns(df, rsi_s, ts_ms)
+
+        # Normalizar coordenadas y de los patrones (precio → 0-100)
+        for p in patterns:
+            for pt in p.get("points", []):
+                pt["y_norm"] = round(normalize_value(pt["y"], last_lo, last_hi), 3)
+            if p.get("mid"):
+                p["mid"]["y_norm"] = round(normalize_value(p["mid"]["y"], last_lo, last_hi), 3)
+            nk = p.get("neckline")
+            if nk:
+                nk["y1_norm"] = round(normalize_value(nk["y1"], last_lo, last_hi), 3)
+                nk["y2_norm"] = round(normalize_value(nk["y2"], last_lo, last_hi), 3)
+
+        # ── Señales ───────────────────────────────────────────
+        signals = calc_signals(close, trigger, average, rsi_s, ts_ms)
+
+        # ── Últimos valores ───────────────────────────────────
+        last_trig = float(trigger.dropna().iloc[-1]) if not trigger.dropna().empty else None
+        last_avg  = float(average.dropna().iloc[-1]) if not average.dropna().empty else None
+        last_rsi  = float(rsi_s.dropna().iloc[-1])   if not rsi_s.dropna().empty  else 50.0
+        last_emas = float(ema_s.dropna().iloc[-1])    if not ema_s.dropna().empty  else None
+        last_emal = float(ema_l.dropna().iloc[-1])    if not ema_l.dropna().empty  else None
+        tb_up     = bool(last_trig and last_avg and last_trig > last_avg)
+
+        return {
+            "ticker":      sym,
+            "name":        ASSET_NAMES.get(sym, sym),
+            "bar_type":    bar_type,
+            "total_bars":  len(df),
+            "last_price":  round(last_price, 6),
+            "trigger":     round(last_trig, 6) if last_trig else None,
+            "average":     round(last_avg,  6) if last_avg  else None,
+            "tb_up":       tb_up,
+            "last_rsi":    round(last_rsi, 2),
+            "ema_short":   round(last_emas, 6) if last_emas else None,
+            "ema_long":    round(last_emal, 6) if last_emal else None,
+            "ema_short_name": f"EMA{ema_short}",
+            "ema_long_name":  f"EMA{ema_long}",
+            "fractal_levels": frac_norm,
+
+            "chart": {
+                "candles":    candles,         # velas normalizadas 0-100
+                "trigger":    trig_norm,        # MonarcaBand Trigger 0-100
+                "average":    avg_norm,         # MonarcaBand Average 0-100
+                "tb_crosses": tb_crosses,       # cruces en 0-100
+                "ema_short":  ema_s_norm,       # EMA200 en 0-100
+                "ema_long":   ema_l_norm,       # EMA800 en 0-100
+                "close_norm": close_norm,       # precio normalizado
+                "rsi_os":     rsi_os_pts,       # señales RSI <30 en gráfico 0-100
+                "rsi_ob":     rsi_ob_pts,       # señales RSI >70 en gráfico 0-100
+                "rsi":        rsi_panel,        # panel RSI 0-100 nativo
+            },
+
+            "divergences":      divergences[:80],
+            "zone_divergences": zone_divs[:20],
+            "last_divergences": divergences[:5],
+            "rsi_div_segments": rsi_div_segs,
+
+            "patterns": patterns,
+            "signals":  signals,
+        }
+
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "detail": traceback.format_exc()}
+PYEOF
+echo "OK: $(wc -l < /home/claude/trading_band_routes.py) líneas"
+Salida
+
+OK: 715 líneas
+Listo

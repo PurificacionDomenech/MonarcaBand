@@ -47,42 +47,15 @@ def sma(s: pd.Series, p: int) -> pd.Series:
 def ema_calc(s: pd.Series, p: int) -> pd.Series:
     return s.ewm(span=p, adjust=False).mean()
 
-def rma(s: pd.Series, p: int) -> pd.Series:
-    result = np.full(len(s), np.nan)
-    vals = s.values
-    # Encontrar primer índice donde tenemos p valores no-NaN consecutivos
-    i = 0
-    while i < len(vals):
-        if np.isnan(vals[i]):
-            i += 1
-            continue
-        window_end = min(i + p, len(vals))
-        window = vals[i:window_end]
-        valid = window[~np.isnan(window)]
-        if len(valid) >= p:
-            start = i + p - 1  # último índice de la ventana de semilla
-            result[start] = np.mean(valid[:p])
-            alpha = 1.0 / p
-            for j in range(start + 1, len(vals)):
-                if np.isnan(vals[j]):
-                    result[j] = result[j - 1]
-                else:
-                    result[j] = alpha * vals[j] + (1 - alpha) * result[j - 1]
-            return pd.Series(result, index=s.index)
-        i += 1
-    return pd.Series(result, index=s.index)
-
 def calc_rsi(s: pd.Series, p: int = 14) -> pd.Series:
-    change = s.diff()
-    up_   = change.clip(lower=0)
-    down_ = (-change).clip(lower=0)
-    avg_up   = rma(up_,   p)
-    avg_down = rma(down_, p)
-    rs = avg_up / avg_down.replace(0, np.nan)
-    rsi_out = 100 - (100 / (1 + rs))
-    rsi_out[avg_down == 0] = 100.0
-    rsi_out[avg_up   == 0] = 0.0
-    return rsi_out
+    """RSI con RMA (Wilder's smoothing) usando ewm(alpha=1/p). TradingView-compatible."""
+    delta = s.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(alpha=1/p, min_periods=p, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/p, min_periods=p, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return (100 - 100 / (1 + rs)).fillna(50.0)
 
 def calc_trading_band(close: pd.Series, tp: int = 12, ap: int = 12):
     trigger = sma(close, tp)
@@ -94,34 +67,69 @@ def calc_trading_band(close: pd.Series, tp: int = 12, ap: int = 12):
 # ──────────────────────────────────────────────────────────
 
 def build_range_bars(df: pd.DataFrame, range_size: float) -> pd.DataFrame:
+    """
+    Construye velas de rango a partir de datos tick (1m/5m).
+    Cada barra se cierra cuando High - Low >= range_size.
+    La barra siguiente abre en el cierre de la anterior.
+    """
     if df.empty or range_size <= 0:
-        return df
-    bars = []
-    o = float(df["open"].iloc[0])
-    h = float(df["high"].iloc[0])
-    l = float(df["low"].iloc[0])
-    v = float(df["volume"].iloc[0]) if "volume" in df.columns else 0.0
-    t = df.index[0]
-    for i in range(1, len(df)):
-        row = df.iloc[i]
-        rh = float(row["high"]); rl = float(row["low"])
-        rv = float(row["volume"]) if "volume" in df.columns else 0.0
-        nh = max(h, rh); nl = min(l, rl)
-        if nh - o >= range_size:
-            c = o + range_size
-            bars.append({"time": t, "open": o, "high": c, "low": l, "close": c, "volume": v})
-            o, h, l, v, t = c, max(c, rh), c, rv, df.index[i]
-        elif o - nl >= range_size:
-            c = o - range_size
-            bars.append({"time": t, "open": o, "high": h, "low": c, "close": c, "volume": v})
-            o, h, l, v, t = c, c, min(c, rl), rv, df.index[i]
-        else:
-            h, l, v = nh, nl, v + rv
-    if bars:
-        rb = pd.DataFrame(bars).set_index("time")
-        rb.index = pd.DatetimeIndex(rb.index)
-        return rb
-    return df
+        return pd.DataFrame(columns=["open","high","low","close","volume","hl"])
+
+    df = df.copy()
+    df.columns = [c.lower() for c in df.columns]
+    required = {"open", "high", "low", "close"}
+    if not required.issubset(set(df.columns)):
+        return pd.DataFrame(columns=["open","high","low","close","volume","hl"])
+
+    bars   = []
+    o = h = l = c = ts = None
+
+    for idx, row in df.iterrows():
+        px = float(row["close"])
+        if np.isnan(px):
+            continue
+
+        if o is None:
+            o = px
+            h = px
+            l = px
+            ts = idx
+
+        # Actualizar high/low tick a tick
+        if px > h:
+            h = px
+        if px < l:
+            l = px
+        c = px
+
+        # ¿La barra alcanzó el rango?
+        if (h - l) >= range_size:
+            bars.append({
+                "time":   ts,
+                "open":   o,
+                "high":   h,
+                "low":    l,
+                "close":  c,
+                "volume": float(row.get("volume", 0)),
+            })
+            # La siguiente barra abre donde cerró esta
+            o = c
+            h = c
+            l = c
+            ts = idx
+
+    if not bars:
+        return pd.DataFrame(columns=["open","high","low","close","volume","hl"])
+
+    rb = pd.DataFrame(bars).set_index("time")
+    rb.index = pd.DatetimeIndex(rb.index)
+    rb["close"] = rb["close"].astype(float)
+    rb["open"] = rb["open"].astype(float)
+    rb["high"] = rb["high"].astype(float)
+    rb["low"] = rb["low"].astype(float)
+    rb["volume"] = rb["volume"].astype(float)
+    rb["hl"] = (rb["high"] - rb["low"]).astype(float)
+    return rb
 
 # ──────────────────────────────────────────────────────────
 # PIVOTES

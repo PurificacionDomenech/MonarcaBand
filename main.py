@@ -823,7 +823,9 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             "shark_tipo": None, "phase": None, "alert_immediate": False,
         }
 
-    if shark["shark_bear"] and direction in ("bearish", "info"):
+    # Shark Fin se añade a raw con su tipo nativo; el PASO 2 descartará si
+    # la dirección dominante es opuesta (igual que todas las confluencias).
+    if shark["shark_bear"]:
         pts_shark = shark["shark_pts"]
         if shark["phase"] == "exceeded":
             raw.append({"id": 7, "ok": True,
@@ -850,7 +852,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             raw.append({"id": 7, "ok": False,
                 "texto": "Sin aleta de tiburón activa", "tipo": "info",
                 "pts_extra": 0, "alert_immediate": False})
-    elif shark["shark_bull"] and direction in ("bullish", "info"):
+    elif shark["shark_bull"]:
         pts_shark = shark["shark_pts"]
         if shark["phase"] == "exceeded":
             raw.append({"id": 7, "ok": True,
