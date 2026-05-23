@@ -2096,7 +2096,7 @@ async def _compute_row(ticker: str) -> dict:
                     tb_cross_recent = True
                     break
 
-    # Datos de Shark Fin para la tabla
+    # Datos de Shark Fin para la tabla — primero via confluencia (ok=True), luego directo
     shark_phase = "none"
     shark_tipo = None
     if confl:
@@ -2104,6 +2104,44 @@ async def _compute_row(ticker: str) -> dict:
         if shark_conf and shark_conf.get("ok"):
             shark_phase = "exceeded" if "EXTREMA" in shark_conf.get("texto", "") else "crossed"
             shark_tipo = shark_conf.get("tipo")
+    # Si confluencia no lo activa, intentar detección directa (formando o dirección contraria)
+    if shark_phase == "none" and _calc_shark_fin is not None:
+        try:
+            sf_direct = _calc_shark_fin(df)
+            _ph = sf_direct.get("phase")
+            if _ph in ("forming", "crossed", "exceeded"):
+                shark_phase = _ph
+                shark_tipo = sf_direct.get("shark_tipo")
+        except Exception:
+            pass
+
+    # Detección de patrones M/W/HCH para la tabla
+    pat_estado = None
+    pat_tipo = None  # 'M' | 'W' | 'HCH' | 'HCH_inv'
+    try:
+        _PRIO = {"confirmado": 5, "formando_hd": 4, "formando_p2": 3, "formando_v2": 3, "formando": 1}
+        best_score = 0
+        if _calc_pattern_mw is not None:
+            import math as _math
+            mw = _calc_pattern_mw(df)
+            for _pn, _pd in (("M", mw.get("M")), ("W", mw.get("W"))):
+                if _pd and _pd.get("estado"):
+                    sc = _PRIO.get(_pd["estado"], 0)
+                    if sc > best_score:
+                        best_score = sc
+                        pat_estado = _pd["estado"]
+                        pat_tipo = _pn
+        if _calc_pattern_hch is not None:
+            hch = _calc_pattern_hch(df)
+            for _pn, _pd in (("HCH", hch.get("HCH")), ("HCH_inv", hch.get("HCH_inv"))):
+                if _pd and _pd.get("estado"):
+                    sc = _PRIO.get(_pd["estado"], 0)
+                    if sc > best_score:
+                        best_score = sc
+                        pat_estado = _pd["estado"]
+                        pat_tipo = _pn
+    except Exception as _pe:
+        pass
 
     result = {
         "ticker": key,
@@ -2120,6 +2158,8 @@ async def _compute_row(ticker: str) -> dict:
         "tb_cross_recent": tb_cross_recent,
         "shark_phase": shark_phase,
         "shark_tipo": shark_tipo,
+        "pat_estado": pat_estado,
+        "pat_tipo": pat_tipo,
         "confluencias_puntos": confl["puntos"] if confl else 0,
         "confluencias_estado": confl["estado"] if confl else "NO AHORA",
         "confluencias": confl["confluencias"] if confl else [],

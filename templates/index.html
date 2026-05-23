@@ -390,7 +390,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <thead>
             <tr>
               <th>★ ACTIVO</th><th class="r">PRECIO</th><th class="r">CAMBIO %</th>
-              <th class="c">RSI 14</th><th class="c">🦈 SHARK</th><th class="c">EMAs</th><th class="c">CRUCE</th>
+              <th class="c">RSI 14</th><th class="c">🦈 SHARK · 🕯️ PATRÓN</th><th class="c">EMAs</th><th class="c">CRUCE</th>
               <th class="c">◈ BANDA</th><th class="c">ESTADO</th>
             </tr>
           </thead>
@@ -665,15 +665,28 @@ async function loadRow(t){
     }
     const she=document.getElementById(`tsh-${id}`);
     if(she){
+      let _html='';
+      // ── Shark Fin ──
       if(d.shark_phase && d.shark_phase!=='none'){
         const isExtreme=d.shark_phase==='exceeded';
         const isCross=d.shark_phase==='crossed';
+        const isForm=d.shark_phase==='forming';
         const bull=d.shark_tipo==='bullish';
-        const emoji=isExtreme?'⚡🦈':(isCross?'🦈':'🦈');
+        const dir=bull?'▲':'▼';
+        const emoji=isExtreme?'⚡🦈':'🦈';
         const cls=isExtreme?'maj-s':(isCross?'maj-r':'none');
-        const txt=isExtreme?'EXTREMA':(isCross?'CONFIRMADA':'FORMÁNDOSE');
-        she.innerHTML=`<span class="ftag ${cls}">${emoji} ${txt}</span>`;
-      }else{she.innerHTML='<span class="ftag none">—</span>'}
+        const txt=isExtreme?'EXTREMA':(isCross?'CRUZADA':'FORMANDO');
+        _html+=`<span class="ftag ${cls}">${emoji} ${dir} ${txt}</span>`;
+      }
+      // ── Patrón M/W/HCH ──
+      if(d.pat_estado && d.pat_tipo){
+        const _pLbl={M:'M',W:'W',HCH:'HCH',HCH_inv:'HCH-INV'}[d.pat_tipo]||d.pat_tipo;
+        const _eLbl={confirmado:'COMPLETO',formando_hd:'HD',formando_p2:'P2',formando_v2:'V2',formando:'FORM.'}[d.pat_estado]||d.pat_estado;
+        const _cls={confirmado:'maj-r',formando_hd:'maj-r',formando_p2:'none',formando_v2:'none',formando:'none'}[d.pat_estado]||'none';
+        if(_html)_html+='<br>';
+        _html+=`<span class="ftag ${_cls}">🕯️ ${_pLbl} ${_eLbl}</span>`;
+      }
+      she.innerHTML=_html||'<span class="ftag none">—</span>';
     }
     const fe=document.getElementById(`tft-${id}`);
     if(fe){
