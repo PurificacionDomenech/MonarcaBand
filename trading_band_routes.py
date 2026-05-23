@@ -27,7 +27,7 @@ TB_CONFIG = {
     "GBPJPY=X":{"range": 1000, "range_calc": 0.6,    "ema_s": 200, "ema_l": 800, "name": "GBP/JPY"},
     "EURUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 200, "ema_l": 800, "name": "EUR/USD"},
     "AUDUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 200, "ema_l": 800, "name": "AUD/USD"},
-    "BTC-USD": {"range": 1000, "range_calc": 1000,   "ema_s": 200, "ema_l": 800, "name": "BTC · Bitcoin"},
+    "BTC-USD": {"range": 1000, "range_calc": 250,    "ema_s": 200, "ema_l": 800, "name": "BTC · Bitcoin"},
     "GBPUSD=X":{"range": 1000, "range_calc": 0.004,  "ema_s": 200, "ema_l": 800, "name": "GBP/USD"},
     "AUDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 200, "ema_l": 800, "name": "AUD/JPY"},
     "_default":{"range": 1000, "range_calc": 50,     "ema_s": 200, "ema_l": 800, "name": "Activo"},
@@ -83,24 +83,32 @@ def build_range_bars(df: pd.DataFrame, range_size: float) -> pd.DataFrame:
 
     bars   = []
     o = h = l = c = ts = None
+    cum_vol = 0.0
 
     for idx, row in df.iterrows():
-        px = float(row["close"])
-        if np.isnan(px):
+        px_open  = float(row["open"])
+        px_high  = float(row["high"])
+        px_low   = float(row["low"])
+        px_close = float(row["close"])
+        if np.isnan(px_close):
             continue
 
         if o is None:
-            o = px
-            h = px
-            l = px
+            o = px_open
+            h = px_high
+            l = px_low
+            c = px_close
             ts = idx
+            cum_vol = float(row.get("volume", 0))
+            continue
 
-        # Actualizar high/low tick a tick
-        if px > h:
-            h = px
-        if px < l:
-            l = px
-        c = px
+        # Extender la barra con los nuevos high/low
+        if px_high > h:
+            h = px_high
+        if px_low < l:
+            l = px_low
+        c = px_close
+        cum_vol += float(row.get("volume", 0))
 
         # ¿La barra alcanzó el rango?
         if (h - l) >= range_size:
@@ -110,13 +118,14 @@ def build_range_bars(df: pd.DataFrame, range_size: float) -> pd.DataFrame:
                 "high":   h,
                 "low":    l,
                 "close":  c,
-                "volume": float(row.get("volume", 0)),
+                "volume": cum_vol,
             })
             # La siguiente barra abre donde cerró esta
             o = c
             h = c
             l = c
             ts = idx
+            cum_vol = 0.0
 
     if not bars:
         return pd.DataFrame(columns=["open","high","low","close","volume","hl"])
