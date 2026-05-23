@@ -50,22 +50,26 @@ def ema_calc(s: pd.Series, p: int) -> pd.Series:
 def rma(s: pd.Series, p: int) -> pd.Series:
     result = np.full(len(s), np.nan)
     vals = s.values
-    start = p - 1
-    while start < len(vals) and np.isnan(vals[start]):
-        start += 1
-    if start >= len(vals):
-        return pd.Series(result, index=s.index)
-    seed_vals = vals[max(0, start - p + 1): start + 1]
-    seed_vals = seed_vals[~np.isnan(seed_vals)]
-    if len(seed_vals) < p:
-        return pd.Series(result, index=s.index)
-    result[start] = np.mean(seed_vals)
-    alpha = 1.0 / p
-    for i in range(start + 1, len(vals)):
+    # Encontrar primer índice donde tenemos p valores no-NaN consecutivos
+    i = 0
+    while i < len(vals):
         if np.isnan(vals[i]):
-            result[i] = result[i - 1]
-        else:
-            result[i] = alpha * vals[i] + (1 - alpha) * result[i - 1]
+            i += 1
+            continue
+        window_end = min(i + p, len(vals))
+        window = vals[i:window_end]
+        valid = window[~np.isnan(window)]
+        if len(valid) >= p:
+            start = i + p - 1  # último índice de la ventana de semilla
+            result[start] = np.mean(valid[:p])
+            alpha = 1.0 / p
+            for j in range(start + 1, len(vals)):
+                if np.isnan(vals[j]):
+                    result[j] = result[j - 1]
+                else:
+                    result[j] = alpha * vals[j] + (1 - alpha) * result[j - 1]
+            return pd.Series(result, index=s.index)
+        i += 1
     return pd.Series(result, index=s.index)
 
 def calc_rsi(s: pd.Series, p: int = 14) -> pd.Series:
@@ -234,9 +238,11 @@ def detect_all_divergences(df: pd.DataFrame, rsi: pd.Series) -> list:
         (10, 10,  10,  200,  2),
         (20, 20,  20,  1000, 3),
     ]
+    low  = df["low"]  if "low"  in df.columns else df["Low"]
+    high = df["high"] if "high" in df.columns else df["High"]
     for lb_l, lb_r, rn_min, rn_max, lvl in levels:
         all_divs.extend(detect_divergences_level(
-            df["low"], df["high"], rsi, lb_l, lb_r, rn_min, rn_max, lvl))
+            low, high, rsi, lb_l, lb_r, rn_min, rn_max, lvl))
     all_divs.sort(key=lambda x: x["bar"], reverse=True)
     return all_divs
 
@@ -366,13 +372,15 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
         n = len(rsi)
         recent = rsi.iloc[-min(lookback, n):]
 
-        # Encontrar picos locales en el RSI reciente que estén >70
+        # Encontrar picos locales en el RSI reciente
+        # Umbral adaptativo: pico > max(60, R1*0.95) para detectar agotamiento
+        thresh_peak = max(60.0, r1_rsi * 0.95) if r1_rsi else 60.0
         shark_peaks = []
         for i in range(1, len(recent) - 1):
             v  = float(recent.iloc[i])
             vp = float(recent.iloc[i - 1])
             vn = float(recent.iloc[i + 1])
-            if v > 70 and v >= vp and v >= vn:
+            if v >= thresh_peak and v >= vp and v >= vn:
                 shark_peaks.append((i, v))
 
         if shark_peaks:
@@ -394,7 +402,7 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
                 result["phase"]          = "exceeded"
                 result["alert_immediate"] = True
                 result["shark_pts"]       = 4
-            elif rsi_now < 70 and peak_i < len(recent) - 1:
+            elif rsi_now < thresh_peak and peak_i < len(recent) - 1:
                 # Ya cruzó hacia abajo — alerta al cruce
                 result["phase"]          = "crossed"
                 result["alert_immediate"] = True

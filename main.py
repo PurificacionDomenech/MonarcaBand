@@ -387,9 +387,13 @@ def calc_indicators(df, es=200, el=800):
         close = close.iloc[:, 0]
     df[f"EMA{es}"] = close.ewm(span=es, adjust=False).mean()
     df[f"EMA{el}"] = close.ewm(span=el, adjust=False).mean()
-    d = close.diff()
-    losses = (-d.where(d < 0, 0)).rolling(14).mean().replace(0, np.nan)
-    df["RSI"] = 100 - (100 / (1 + d.where(d > 0, 0).rolling(14).mean() / losses))
+    # RSI con RMA (igual que TradingView) — usar _calc_rsi_tv si está disponible
+    if _calc_rsi_tv is not None:
+        df["RSI"] = _calc_rsi_tv(close, 14)
+    else:
+        d = close.diff()
+        losses = (-d.where(d < 0, 0)).rolling(14).mean().replace(0, np.nan)
+        df["RSI"] = 100 - (100 / (1 + d.where(d > 0, 0).rolling(14).mean() / losses))
     return df
 
 
@@ -1496,8 +1500,11 @@ async def _rsi_realtime_check():
 
             col_rsi = "RSI"
             if col_rsi not in df.columns:
-                import ta
-                df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
+                if _calc_rsi_tv is not None:
+                    df["RSI"] = _calc_rsi_tv(df["Close"], 14)
+                else:
+                    import ta
+                    df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
 
             rsi_series = df["RSI"].dropna()
             if rsi_series.empty:
