@@ -257,6 +257,197 @@ def build_rsi_div_segments(divs: list, rsi: pd.Series, times: list) -> list:
         })
     return segments
 
+
+# ──────────────────────────────────────────────────────────
+# DIVERGENCIA AGRUPADA (para calc_shark_fin)
+# ──────────────────────────────────────────────────────────
+
+def calc_rsi_divergence(df: pd.DataFrame, lookback: int = 30) -> dict:
+    """
+    Detecta divergencias RSI agrupadas en alcistas / bajistas.
+    Devuelve líneas (rsi0, rsi1) compatibles con calc_shark_fin.
+    """
+    result = {
+        "bear_div": False,
+        "bull_div": False,
+        "bear_lines": [],
+        "bull_lines": [],
+    }
+    close = df["close"] if "close" in df.columns else df.get("Close")
+    if close is None or len(close) < lookback + 10:
+        return result
+
+    rsi = calc_rsi(close, 14)
+    if rsi is None or rsi.notna().sum() < lookback:
+        return result
+
+    divs = detect_all_divergences(df, rsi)
+    if not divs:
+        return result
+
+    # Agrupar por tipo
+    bull_divs = [d for d in divs if d["type"] in ("bull", "hbull")]
+    bear_divs = [d for d in divs if d["type"] in ("bear", "hbear")]
+
+    if bear_divs:
+        result["bear_div"] = True
+        for d in bear_divs:
+            result["bear_lines"].append({
+                "rsi0": d["rsi"],      # pivote más reciente (lower high)
+                "rsi1": d["rsi_prev"], # pivote más antiguo (higher high)
+            })
+
+    if bull_divs:
+        result["bull_div"] = True
+        for d in bull_divs:
+            result["bull_lines"].append({
+                "rsi0": d["rsi"],      # pivote más reciente (higher low)
+                "rsi1": d["rsi_prev"], # pivote más antiguo (lower low)
+            })
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────
+# ALETA DE TIBURÓN (Shark Fin)
+# ──────────────────────────────────────────────────────────
+
+def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
+    """
+    Detecta aleta de tiburón en RSI.
+    Requiere divergencia previa confirmada.
+
+    Casos:
+      shark_bear: precio HH + RSI LH (div bajista) → RSI entra >70 y forma pico → cruza <70
+      shark_bull: precio LL + RSI HL (div alcista) → RSI entra <30 y forma valle → cruza >30
+
+    shark_exceeds_div: el pico/valle de la aleta supera el nivel del pivote R1/S1 original
+    → puntuación x2 + alerta instantánea al detectar (sin esperar el cruce)
+    """
+    result = {
+        "shark_bear":         False,
+        "shark_bull":         False,
+        "shark_exceeds_div":  False,
+        "shark_pts":          0,
+        "shark_tipo":         None,
+        "shark_rsi_peak":     None,
+        "shark_div_r1":       None,
+        "phase":              None,   # 'forming' | 'crossed' | 'exceeded'
+        "alert_immediate":    False,
+    }
+
+    if len(df) < 10:
+        return result
+
+    close = df["close"] if "close" in df.columns else df.get("Close")
+    if close is None:
+        return result
+
+    rsi = calc_rsi(close, 14)
+    if rsi is None or rsi.notna().sum() < 10:
+        return result
+    if isinstance(rsi, pd.DataFrame):
+        rsi = rsi.iloc[:, 0]
+    rsi = rsi.dropna()
+    if len(rsi) < 10:
+        return result
+
+    # Primero necesitamos la divergencia previa
+    div = calc_rsi_divergence(df, lookback=lookback)
+
+    # ── ALETA BAJISTA ─────────────────────────────────
+    if div["bear_div"] and div["bear_lines"]:
+        bear_line  = div["bear_lines"][0]
+        r1_rsi     = bear_line["rsi1"]   # RSI del pivote más antiguo (más alto)
+        r2_rsi     = bear_line["rsi0"]   # RSI del pivote más reciente (más bajo = LH)
+
+        # Buscar si después de R2 el RSI ha entrado en zona >70
+        n = len(rsi)
+        recent = rsi.iloc[-min(lookback, n):]
+
+        # Encontrar picos locales en el RSI reciente que estén >70
+        shark_peaks = []
+        for i in range(1, len(recent) - 1):
+            v  = float(recent.iloc[i])
+            vp = float(recent.iloc[i - 1])
+            vn = float(recent.iloc[i + 1])
+            if v > 70 and v >= vp and v >= vn:
+                shark_peaks.append((i, v))
+
+        if shark_peaks:
+            # Tomar el pico más reciente
+            peak_i, peak_rsi = shark_peaks[-1]
+            rsi_now = float(rsi.iloc[-1])
+
+            result["shark_bear"]     = True
+            result["shark_tipo"]     = "bearish"
+            result["shark_rsi_peak"] = peak_rsi
+            result["shark_div_r1"]   = r1_rsi
+
+            # ¿La aleta supera R1 (el pico original de la divergencia)?
+            exceeds = peak_rsi > r1_rsi
+            result["shark_exceeds_div"] = exceeds
+
+            if exceeds:
+                # Alerta instantánea — no esperamos el cruce
+                result["phase"]          = "exceeded"
+                result["alert_immediate"] = True
+                result["shark_pts"]       = 4
+            elif rsi_now < 70 and peak_i < len(recent) - 1:
+                # Ya cruzó hacia abajo — alerta al cruce
+                result["phase"]          = "crossed"
+                result["alert_immediate"] = True
+                result["shark_pts"]       = 2
+            else:
+                # Aún formando — avisar pero no puntuar todavía
+                result["phase"]          = "forming"
+                result["alert_immediate"] = False
+                result["shark_pts"]       = 1  # pre-alerta
+
+    # ── ALETA ALCISTA ─────────────────────────────────
+    elif div["bull_div"] and div["bull_lines"]:
+        bull_line  = div["bull_lines"][0]
+        s1_rsi     = bull_line["rsi1"]   # RSI del pivote más antiguo (más bajo)
+        s2_rsi     = bull_line["rsi0"]   # RSI del pivote más reciente (más alto = HL)
+
+        n = len(rsi)
+        recent = rsi.iloc[-min(lookback, n):]
+
+        shark_valleys = []
+        for i in range(1, len(recent) - 1):
+            v  = float(recent.iloc[i])
+            vp = float(recent.iloc[i - 1])
+            vn = float(recent.iloc[i + 1])
+            if v < 30 and v <= vp and v <= vn:
+                shark_valleys.append((i, v))
+
+        if shark_valleys:
+            valley_i, valley_rsi = shark_valleys[-1]
+            rsi_now = float(rsi.iloc[-1])
+
+            result["shark_bull"]     = True
+            result["shark_tipo"]     = "bullish"
+            result["shark_rsi_peak"] = valley_rsi
+            result["shark_div_r1"]   = s1_rsi
+
+            exceeds = valley_rsi < s1_rsi   # más bajo que S1 original
+            result["shark_exceeds_div"] = exceeds
+
+            if exceeds:
+                result["phase"]          = "exceeded"
+                result["alert_immediate"] = True
+                result["shark_pts"]       = 4
+            elif rsi_now > 30 and valley_i < len(recent) - 1:
+                result["phase"]          = "crossed"
+                result["alert_immediate"] = True
+                result["shark_pts"]       = 2
+            else:
+                result["phase"]          = "forming"
+                result["alert_immediate"] = False
+                result["shark_pts"]       = 1
+
+    return result
+
 # ──────────────────────────────────────────────────────────
 # HELPERS
 # ──────────────────────────────────────────────────────────

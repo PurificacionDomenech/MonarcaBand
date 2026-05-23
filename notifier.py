@@ -747,6 +747,23 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
 
         lines.append(f"{icon} {c['texto']}")
 
+    # ── Bloque especial Aleta Tiburón ──
+    shark_conf = next((c for c in confs if c.get("id") == 7 and c.get("ok")), None)
+    if shark_conf and shark_conf.get("alert_immediate"):
+        lines.append("")
+        if "EXTREMA" in shark_conf.get("texto", ""):
+            if lang == "en":
+                lines.append("⚡🦈 <b>EXTREME SHARK FIN</b> — RSI peak exceeded prior divergence")
+                lines.append("   This is a maximum exhaustion signal — immediate alert")
+            else:
+                lines.append("⚡🦈 <b>ALETA TIBURÓN EXTREMA</b> — pico RSI superó divergencia previa")
+                lines.append("   Señal de agotamiento máximo — alerta inmediata")
+        else:
+            if lang == "en":
+                lines.append("🦈 <b>Shark fin confirmed</b> — RSI crossed back from extreme zone")
+            else:
+                lines.append("🦈 <b>Aleta tiburón confirmada</b> — RSI cruzó de vuelta la zona extrema")
+
     lines.extend(_build_day_context_lines(resultado, lang))
     lines.extend(_build_components_context_lines(t, components_ctx, lang))
 
