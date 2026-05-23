@@ -19,6 +19,8 @@ try:
         calc_rsi as _calc_rsi_tv,
         calc_rsi_divergence as _calc_rsi_divergence,
         calc_shark_fin as _calc_shark_fin,
+        calc_pattern_mw as _calc_pattern_mw,
+        calc_pattern_hch as _calc_pattern_hch,
     )
     HAS_TB = True
 except Exception as _tb_err:
@@ -29,6 +31,8 @@ except Exception as _tb_err:
     _calc_rsi_tv = None
     _calc_rsi_divergence = None
     _calc_shark_fin = None
+    _calc_pattern_mw = None
+    _calc_pattern_hch = None
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -1255,12 +1259,70 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
     return alerts_by_ticker
 
 
+def _is_weekend_now() -> bool:
+    """Retorna True si es sábado o domingo (UTC)."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).weekday() >= 5
+
+
+def _filter_expired_alerts(alerts_by_ticker: dict, max_age_seconds: int = 3600) -> dict:
+    """
+    Filtra alertas cuyo ts_utc_iso sea mayor a max_age_seconds.
+    Descarta silenciosamente cualquier evento antiguo.
+    """
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    filtered = {}
+    for ticker, alerta_list in alerts_by_ticker.items():
+        valid = []
+        for a in alerta_list:
+            ts_iso = a.get("ts_utc_iso", "")
+            try:
+                if ts_iso:
+                    ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    age = (now_utc - ts).total_seconds()
+                    if age <= max_age_seconds:
+                        valid.append(a)
+                    else:
+                        print(f"[alert-filter] Descartada alerta de {ticker} con {age/60:.0f} min de antigüedad")
+                else:
+                    valid.append(a)
+            except Exception:
+                valid.append(a)
+        if valid:
+            filtered[ticker] = valid
+    return filtered
+
+
+def _apply_weekend_filter(alerts_by_ticker: dict) -> dict:
+    """
+    En fin de semana solo permite alertas de BTC-USD.
+    """
+    if not _is_weekend_now():
+        return alerts_by_ticker
+    filtered = {t: v for t, v in alerts_by_ticker.items() if t == "BTC-USD"}
+    skipped = [t for t in alerts_by_ticker if t != "BTC-USD"]
+    if skipped:
+        print(f"[weekend-filter] Fin de semana — ignorando alertas de: {', '.join(skipped)}")
+    return filtered
+
+
 async def scheduled_watch():
     """Revisión periódica — analiza la última vela + confluencias TradingBand."""
     if not HAS_NOTIFIER:
         return
+
+    watch_tickers = WATCH_TICKERS
+    if _is_weekend_now():
+        watch_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
+        print("[scheduler] Fin de semana — revisando solo BTC-USD")
+
     # 1) Alertas de confluencia TradingBand (cruce Trigger/Average + div + nivel)
-    tb_alerts = await _check_tb_confluences(WATCH_TICKERS, label="scheduler")
+    tb_alerts = await _check_tb_confluences(watch_tickers, label="scheduler")
+    if tb_alerts:
+        tb_alerts = _apply_weekend_filter(_filter_expired_alerts(tb_alerts))
     if tb_alerts:
         total = sum(len(v) for v in tb_alerts.values())
         print(f"[scheduler] {total} alertas de TradingBand en {len(tb_alerts)} ticker(s)")
@@ -1268,8 +1330,10 @@ async def scheduled_watch():
 
     # 2) Alertas clásicas de confluencias EMA/RSI/fractales
     alerts_by_ticker = await _check_tickers(
-        WATCH_TICKERS, num_candles=1, label="scheduler"
+        watch_tickers, num_candles=1, label="scheduler"
     )
+    if alerts_by_ticker:
+        alerts_by_ticker = _apply_weekend_filter(_filter_expired_alerts(alerts_by_ticker))
     if alerts_by_ticker:
         total = sum(len(v) for v in alerts_by_ticker.values())
         print(f"[scheduler] {total} alertas nuevas en {len(alerts_by_ticker)} ticker(s)")
@@ -1284,8 +1348,16 @@ async def daily_catchup():
     """Catch-up al arrancar: revisa SOLO la última vela (≤4h) — nada de más de 1h atrás."""
     if not HAS_NOTIFIER:
         return
+
+    catchup_tickers = WATCH_TICKERS
+    if _is_weekend_now():
+        catchup_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
+        print("[catchup] Fin de semana — revisando solo BTC-USD")
+
     # 1) Confluencias TradingBand (siempre frescas ≤2h)
-    tb_alerts = await _check_tb_confluences(WATCH_TICKERS, label="catchup")
+    tb_alerts = await _check_tb_confluences(catchup_tickers, label="catchup")
+    if tb_alerts:
+        tb_alerts = _apply_weekend_filter(_filter_expired_alerts(tb_alerts))
     if tb_alerts:
         total = sum(len(v) for v in tb_alerts.values())
         print(f"[catchup] {total} alertas TradingBand enviadas")
@@ -1294,8 +1366,10 @@ async def daily_catchup():
     # 2) Alertas clásicas
     print("[catchup] Revisando vela actual (máx 1h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
-        WATCH_TICKERS, num_candles=1, label="catchup", max_per_ticker=1
+        catchup_tickers, num_candles=1, label="catchup", max_per_ticker=1
     )
+    if alerts_by_ticker:
+        alerts_by_ticker = _apply_weekend_filter(_filter_expired_alerts(alerts_by_ticker))
     if alerts_by_ticker:
         total = sum(len(v) for v in alerts_by_ticker.values())
         print(f"[catchup] {total} alertas del día enviadas")
@@ -1510,6 +1584,8 @@ async def _rsi_realtime_check():
         except Exception as e:
             print(f"[rsi-watch] Error revisando RSI de {ticker}: {e}")
 
+    if alertas_rsi:
+        alertas_rsi = _apply_weekend_filter(_filter_expired_alerts(alertas_rsi))
     if alertas_rsi:
         await notify_users_with_alerts(alertas_rsi)
 
@@ -1903,6 +1979,34 @@ async def get_chart(ticker: str):
         opens = calc_opens(df)
         rsi_s = df["RSI"].dropna()
         first = float(df["Close"].iloc[0])
+
+        # ── Patrones de precio M / W / HCH ───────────────
+        def _sanitize_pat(p):
+            """Reemplaza NaN/Inf en un dict de patrón por None para JSON seguro."""
+            if not p:
+                return p
+            import math
+            out = {}
+            for k, v in p.items():
+                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    out[k] = None
+                else:
+                    out[k] = v
+            return out
+
+        patterns = {"M": None, "W": None, "HCH": None, "HCH_inv": None}
+        try:
+            if _calc_pattern_mw is not None:
+                mw = _calc_pattern_mw(df)
+                patterns["M"] = _sanitize_pat(mw.get("M"))
+                patterns["W"] = _sanitize_pat(mw.get("W"))
+            if _calc_pattern_hch is not None:
+                hch = _calc_pattern_hch(df)
+                patterns["HCH"]     = _sanitize_pat(hch.get("HCH"))
+                patterns["HCH_inv"] = _sanitize_pat(hch.get("HCH_inv"))
+        except Exception as _pe:
+            print(f"[patterns] Error calculando patrones para {sym}: {_pe}")
+
         return {
             "chart": {
                 "candles": candles,
@@ -1929,6 +2033,7 @@ async def get_chart(ticker: str):
             ),
             "asset_config": {"ema_short": es, "ema_long": el},
             "bar_type": bar_type,
+            "patterns": patterns,
         }
     except Exception as e:
         return {"error": str(e)}

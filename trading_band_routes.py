@@ -621,6 +621,270 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
         return {"error": str(e), "trace": traceback.format_exc()}
 
 
+def calc_pattern_mw(df: pd.DataFrame, lookback: int = 40, tol: float = 0.018) -> dict:
+    """
+    Detecta M (doble techo) y W (doble suelo) en el dataframe de precios.
+    Retorna coordenadas completas + estado (confirmado/formando).
+    """
+    result = {"M": None, "W": None}
+    if len(df) < 15:
+        return result
+
+    high  = df["High"]  if "High"  in df.columns else df.get("high",  pd.Series())
+    low   = df["Low"]   if "Low"   in df.columns else df.get("low",   pd.Series())
+    close = df["Close"] if "Close" in df.columns else df.get("close", pd.Series())
+    rsi_col = "RSI" if "RSI" in df.columns else None
+
+    if isinstance(high,  pd.DataFrame): high  = high.iloc[:, 0]
+    if isinstance(low,   pd.DataFrame): low   = low.iloc[:, 0]
+    if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
+
+    if rsi_col:
+        rsi_s = df[rsi_col]
+        if isinstance(rsi_s, pd.DataFrame): rsi_s = rsi_s.iloc[:, 0]
+    else:
+        rsi_s = pd.Series([50.0] * len(df), index=df.index)
+
+    window_df = df.iloc[-lookback:]
+    wh = high.iloc[-lookback:]
+    wl = low.iloc[-lookback:]
+    wr = rsi_s.iloc[-lookback:]
+    wc = close.iloc[-lookback:]
+    dates = list(window_df.index)
+    n = len(window_df)
+
+    def local_highs(series, min_dist=3):
+        peaks = []
+        for i in range(2, n - 2):
+            v = float(series.iloc[i])
+            if (v >= float(series.iloc[i-1]) and v >= float(series.iloc[i-2]) and
+                v >= float(series.iloc[i+1]) and v >= float(series.iloc[i+2])):
+                if not peaks or (i - peaks[-1][0]) >= min_dist:
+                    peaks.append((i, v))
+        return peaks
+
+    def local_lows(series, min_dist=3):
+        troughs = []
+        for i in range(2, n - 2):
+            v = float(series.iloc[i])
+            if (v <= float(series.iloc[i-1]) and v <= float(series.iloc[i-2]) and
+                v <= float(series.iloc[i+1]) and v <= float(series.iloc[i+2])):
+                if not troughs or (i - troughs[-1][0]) >= min_dist:
+                    troughs.append((i, v))
+        return troughs
+
+    highs = local_highs(wh)
+    lows  = local_lows(wl)
+
+    # ── Patrón M (doble techo) ────────────────────────────
+    if len(highs) >= 2:
+        for i in range(len(highs) - 1):
+            h1_i, h1_v = highs[i]
+            h2_i, h2_v = highs[-1]
+            if h2_i - h1_i < 5:
+                continue
+            if abs(h1_v - h2_v) / max(h1_v, 0.0001) <= tol:
+                mid_lows = [lows[j] for j in range(len(lows)) if h1_i < lows[j][0] < h2_i]
+                neckline_v = min((v for _, v in mid_lows), default=None)
+                if neckline_v is None:
+                    neckline_v = float(wl.iloc[h1_i:h2_i].min())
+                rsi1 = float(wr.iloc[h1_i])
+                rsi2 = float(wr.iloc[h2_i])
+                current_price = float(wc.iloc[-1])
+                if current_price < neckline_v:
+                    estado = "confirmado"
+                elif abs(current_price - h2_v) / max(h2_v, 0.0001) <= tol * 1.5:
+                    estado = "formando_p2"
+                else:
+                    estado = "formando"
+                result["M"] = {
+                    "p1_x": int(pd.Timestamp(dates[h1_i]).timestamp() * 1000),
+                    "p1_y": h1_v,
+                    "p2_x": int(pd.Timestamp(dates[h2_i]).timestamp() * 1000),
+                    "p2_y": h2_v,
+                    "neckline": neckline_v,
+                    "rsi1": rsi1, "rsi2": rsi2,
+                    "rsi_div": rsi2 < rsi1 - 2,
+                    "estado": estado,
+                    "bearish": True,
+                }
+                break
+
+    # ── Patrón W (doble suelo) ────────────────────────────
+    if len(lows) >= 2:
+        for i in range(len(lows) - 1):
+            l1_i, l1_v = lows[i]
+            l2_i, l2_v = lows[-1]
+            if l2_i - l1_i < 5:
+                continue
+            if abs(l1_v - l2_v) / max(l1_v, 0.0001) <= tol:
+                mid_highs = [highs[j] for j in range(len(highs)) if l1_i < highs[j][0] < l2_i]
+                neckline_v = max((v for _, v in mid_highs), default=None)
+                if neckline_v is None:
+                    neckline_v = float(wh.iloc[l1_i:l2_i].max())
+                rsi1 = float(wr.iloc[l1_i])
+                rsi2 = float(wr.iloc[l2_i])
+                current_price = float(wc.iloc[-1])
+                if current_price > neckline_v:
+                    estado = "confirmado"
+                elif abs(current_price - l2_v) / max(l2_v, 0.0001) <= tol * 1.5:
+                    estado = "formando_v2"
+                else:
+                    estado = "formando"
+                result["W"] = {
+                    "v1_x": int(pd.Timestamp(dates[l1_i]).timestamp() * 1000),
+                    "v1_y": l1_v,
+                    "v2_x": int(pd.Timestamp(dates[l2_i]).timestamp() * 1000),
+                    "v2_y": l2_v,
+                    "neckline": neckline_v,
+                    "rsi1": rsi1, "rsi2": rsi2,
+                    "rsi_div": rsi2 > rsi1 + 2,
+                    "estado": estado,
+                    "bullish": True,
+                }
+                break
+
+    return result
+
+
+def calc_pattern_hch(df: pd.DataFrame, lookback: int = 60, tol: float = 0.02) -> dict:
+    """
+    Detecta HCH bajista e HCH invertido alcista.
+    Estado 'formando_hd' = hombro derecho aún no completado.
+    """
+    result = {"HCH": None, "HCH_inv": None}
+    if len(df) < 20:
+        return result
+
+    high  = df["High"]  if "High"  in df.columns else df.get("high",  pd.Series())
+    low   = df["Low"]   if "Low"   in df.columns else df.get("low",   pd.Series())
+    close = df["Close"] if "Close" in df.columns else df.get("close", pd.Series())
+    rsi_col = "RSI" if "RSI" in df.columns else None
+
+    if isinstance(high,  pd.DataFrame): high  = high.iloc[:, 0]
+    if isinstance(low,   pd.DataFrame): low   = low.iloc[:, 0]
+    if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
+
+    if rsi_col:
+        rsi_s = df[rsi_col]
+        if isinstance(rsi_s, pd.DataFrame): rsi_s = rsi_s.iloc[:, 0]
+    else:
+        rsi_s = pd.Series([50.0] * len(df), index=df.index)
+
+    wh = high.iloc[-lookback:]
+    wl = low.iloc[-lookback:]
+    wr = rsi_s.iloc[-lookback:]
+    wc = close.iloc[-lookback:]
+    dates = list(df.index[-lookback:])
+    n = len(wh)
+
+    def find_peaks(series, min_dist=4):
+        peaks = []
+        for i in range(3, n - 3):
+            v = float(series.iloc[i])
+            if all(v >= float(series.iloc[i-j]) for j in range(1, 4)) and \
+               all(v >= float(series.iloc[i+j]) for j in range(1, 4)):
+                if not peaks or (i - peaks[-1][0]) >= min_dist:
+                    peaks.append((i, v, dates[i]))
+        return peaks
+
+    def find_troughs(series, min_dist=4):
+        troughs = []
+        for i in range(3, n - 3):
+            v = float(series.iloc[i])
+            if all(v <= float(series.iloc[i-j]) for j in range(1, 4)) and \
+               all(v <= float(series.iloc[i+j]) for j in range(1, 4)):
+                if not troughs or (i - troughs[-1][0]) >= min_dist:
+                    troughs.append((i, v, dates[i]))
+        return troughs
+
+    def ts_ms(d):
+        try: return int(pd.Timestamp(d).timestamp() * 1000)
+        except: return None
+
+    peaks   = find_peaks(wh)
+    troughs = find_troughs(wl)
+    current = float(wc.iloc[-1])
+
+    # ── HCH bajista: HI < CAB > HD, con HI ≈ HD ─────────
+    if len(peaks) >= 3:
+        for i in range(len(peaks) - 2):
+            hi_i, hi_v, hi_x = peaks[i]
+            cab_i, cab_v, cab_x = peaks[i+1]
+            hd_i, hd_v, hd_x = peaks[-1]
+            if cab_v <= hi_v or cab_v <= hd_v:
+                continue
+            if abs(hi_v - hd_v) / max(hi_v, 0.0001) > tol * 2:
+                continue
+            if hd_i - cab_i < 5:
+                continue
+            v1 = [t for t in troughs if hi_i < t[0] < cab_i]
+            v2 = [t for t in troughs if cab_i < t[0] < hd_i]
+            if not v1 or not v2:
+                continue
+            nk1_i, nk1_v, nk1_x = min(v1, key=lambda x: x[1])
+            nk2_i, nk2_v, nk2_x = min(v2, key=lambda x: x[1])
+            if current < nk2_v:
+                estado = "confirmado"
+            elif abs(current - hd_v) / max(hd_v, 0.0001) <= tol:
+                estado = "formando_hd"
+            else:
+                estado = "formando"
+            result["HCH"] = {
+                "hi_x":  ts_ms(hi_x),  "hi_y":  hi_v,
+                "cab_x": ts_ms(cab_x), "cab_y": cab_v,
+                "hd_x":  ts_ms(hd_x),  "hd_y":  hd_v,
+                "nk1_x": ts_ms(nk1_x), "nk1_y": nk1_v,
+                "nk2_x": ts_ms(nk2_x), "nk2_y": nk2_v,
+                "rsi_hi":  float(wr.iloc[hi_i]),
+                "rsi_cab": float(wr.iloc[cab_i]),
+                "rsi_hd":  float(wr.iloc[hd_i]),
+                "estado": estado,
+                "bearish": True,
+            }
+            break
+
+    # ── HCH invertido alcista ─────────────────────────────
+    if len(troughs) >= 3:
+        for i in range(len(troughs) - 2):
+            hi_i, hi_v, hi_x = troughs[i]
+            cab_i, cab_v, cab_x = troughs[i+1]
+            hd_i, hd_v, hd_x = troughs[-1]
+            if cab_v >= hi_v or cab_v >= hd_v:
+                continue
+            if abs(hi_v - hd_v) / max(abs(hi_v), 0.0001) > tol * 2:
+                continue
+            if hd_i - cab_i < 5:
+                continue
+            p1 = [t for t in peaks if hi_i < t[0] < cab_i]
+            p2 = [t for t in peaks if cab_i < t[0] < hd_i]
+            if not p1 or not p2:
+                continue
+            nk1_i, nk1_v, nk1_x = max(p1, key=lambda x: x[1])
+            nk2_i, nk2_v, nk2_x = max(p2, key=lambda x: x[1])
+            if current > nk2_v:
+                estado = "confirmado"
+            elif abs(current - hd_v) / max(abs(hd_v), 0.0001) <= tol:
+                estado = "formando_hd"
+            else:
+                estado = "formando"
+            result["HCH_inv"] = {
+                "hi_x":  ts_ms(hi_x),  "hi_y":  hi_v,
+                "cab_x": ts_ms(cab_x), "cab_y": cab_v,
+                "hd_x":  ts_ms(hd_x),  "hd_y":  hd_v,
+                "nk1_x": ts_ms(nk1_x), "nk1_y": nk1_v,
+                "nk2_x": ts_ms(nk2_x), "nk2_y": nk2_v,
+                "rsi_hi":  float(wr.iloc[hi_i]),
+                "rsi_cab": float(wr.iloc[cab_i]),
+                "rsi_hd":  float(wr.iloc[hd_i]),
+                "estado": estado,
+                "bullish": True,
+            }
+            break
+
+    return result
+
+
 @router.get("/tickers")
 async def get_tickers():
     return {"tickers": [

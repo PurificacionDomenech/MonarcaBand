@@ -193,6 +193,13 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
         <div id="alertList" style="display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto"></div>
       </div>
 
+      <div class="card" id="patBox" style="padding:11px;display:none">
+        <div style="font-family:var(--fd);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:rgba(0,255,65,.3);margin-bottom:8px">
+          🕯️ PATRONES — <span id="patSym" style="color:var(--g)"></span>
+        </div>
+        <div id="patList" style="display:flex;flex-direction:column;gap:5px"></div>
+      </div>
+
 <div class="card" id="np" style="padding:12px">
   <div id="np-hdr" onclick="toggleNP()" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;margin-bottom:0">
     <div style="display:flex;align-items:center;gap:7px">
@@ -807,7 +814,7 @@ async function loadSym(s){
     document.getElementById('lw').style.display='none';
     if(data.bar_type){const lbl=document.getElementById('chart-bar-label');if(lbl)lbl.textContent='GRÁFICO '+data.bar_type.toUpperCase();}
     if(document.getElementById('chartBody').style.display!=='none')renderP(data);
-    updateSB(data);renderCA();renderBand(data.tb_last);
+    updateSB(data);renderCA();renderBand(data.tb_last);renderPatterns(data);
   }catch(e){document.getElementById('lw').style.display='none';toast('> ERROR: '+e.message,'bearish')}
 }
 function renderCA(){
@@ -911,11 +918,6 @@ function renderP(apiData){
     if(ros.length)traces.push({x:ros.map(p=>new Date(p.x)),y:ros.map(p=>p.y),type:'scatter',mode:'markers',name:'RSI<30',marker:{color:'#00ff41',size:11,symbol:'triangle-up',line:{color:'#000',width:1.5}},hovertemplate:'▲ RSI Sobreventa<br>$%{y:,.2f}<extra></extra>'});
     if(rob.length)traces.push({x:rob.map(p=>new Date(p.x)),y:rob.map(p=>p.y),type:'scatter',mode:'markers',name:'RSI>70',marker:{color:'#ff0033',size:11,symbol:'triangle-down',line:{color:'#000',width:1.5}},hovertemplate:'▼ RSI Sobrecompra<br>$%{y:,.2f}<extra></extra>'});
   }
-  if(ind.band){
-    const tbd=cd.tb_trigger||[],tba=cd.tb_average||[];
-    if(tbd.length)traces.push({x:tbd.map(p=>new Date(p.x)),y:tbd.map(p=>p.y),type:'scatter',mode:'lines',name:'Trigger SMA12',line:{color:'rgba(240,165,0,.85)',width:1.5},hovertemplate:'Trigger: $%{y:,.4f}<extra></extra>'});
-    if(tba.length)traces.push({x:tba.map(p=>new Date(p.x)),y:tba.map(p=>p.y),type:'scatter',mode:'lines',name:'Average SMA12',line:{color:'rgba(240,165,0,.35)',width:2,dash:'dot'},fill:'tonexty',fillcolor:'rgba(240,165,0,.04)',hovertemplate:'Average: $%{y:,.4f}<extra></extra>'});
-  }
   if(ind.crosses&&cd.tb_crosses&&cd.tb_crosses.length){
     const cU=cd.tb_crosses.filter(p=>p.dir===1),cD=cd.tb_crosses.filter(p=>p.dir===-1);
     if(cU.length)traces.push({x:cU.map(p=>new Date(p.x)),y:cU.map(p=>p.y*.9985),type:'scatter',mode:'markers',name:'▲ Cruce alcista',marker:{color:'#00ff41',size:10,symbol:'triangle-up',line:{color:'#000',width:1.5}},hovertemplate:'▲ Cruce alcista<br>$%{y:,.4f}<extra></extra>'});
@@ -947,6 +949,66 @@ function renderP(apiData){
     const pad=(mx-mn)*.09;return[mn-pad,mx+pad];
   }
   if(xU){const yr=yRange(xU);if(yr)layout.yaxis.range=yr}
+
+  // ── PATRONES M / W / HCH ─────────────────────────────
+  const pats=apiData.patterns||{};
+  function addPatternM(m){
+    if(!m)return;
+    const col=m.estado==='confirmado'?'rgba(255,23,68,.9)':'rgba(255,152,0,.85)';
+    const dash=m.estado==='confirmado'?'solid':'dot';
+    traces.push({x:[new Date(m.p1_x),new Date(m.p2_x)],y:[m.p1_y,m.p2_y],mode:'lines+markers+text',name:'Patrón M',
+      line:{color:col,width:2,dash},marker:{color:col,size:9,symbol:'triangle-down'},
+      text:['P1','P2'],textposition:'top center',textfont:{color:col,size:10,family:'Share Tech Mono'},
+      hovertemplate:`<b>Patrón M — ${m.estado}</b><br>RSI div: ${m.rsi_div?'Sí':'No'}<extra></extra>`});
+    shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:m.neckline,y1:m.neckline,
+      line:{color:col,width:1.2,dash:'dashdot'}});
+    traces.push({x:[new Date(m.p2_x)],y:[m.neckline],mode:'text',name:'',
+      text:['── Neck M'],textposition:'bottom right',
+      textfont:{color:col,size:9,family:'Share Tech Mono'},hoverinfo:'skip',showlegend:false});
+  }
+  function addPatternW(w){
+    if(!w)return;
+    const col=w.estado==='confirmado'?'rgba(0,230,118,.9)':'rgba(0,200,255,.85)';
+    const dash=w.estado==='confirmado'?'solid':'dot';
+    traces.push({x:[new Date(w.v1_x),new Date(w.v2_x)],y:[w.v1_y,w.v2_y],mode:'lines+markers+text',name:'Patrón W',
+      line:{color:col,width:2,dash},marker:{color:col,size:9,symbol:'triangle-up'},
+      text:['V1','V2'],textposition:'bottom center',textfont:{color:col,size:10,family:'Share Tech Mono'},
+      hovertemplate:`<b>Patrón W — ${w.estado}</b><br>RSI div: ${w.rsi_div?'Sí':'No'}<extra></extra>`});
+    shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:w.neckline,y1:w.neckline,
+      line:{color:col,width:1.2,dash:'dashdot'}});
+    traces.push({x:[new Date(w.v2_x)],y:[w.neckline],mode:'text',name:'',
+      text:['── Neck W'],textposition:'top right',
+      textfont:{color:col,size:9,family:'Share Tech Mono'},hoverinfo:'skip',showlegend:false});
+  }
+  function addPatternHCH(h){
+    if(!h)return;
+    const isBear=h.bearish;
+    const col=isBear?(h.estado==='confirmado'?'rgba(255,23,68,.9)':'rgba(255,152,0,.85)')
+                    :(h.estado==='confirmado'?'rgba(0,230,118,.9)':'rgba(0,200,255,.85)');
+    const label=isBear?'HCH':'HCH inv';
+    const dash=h.estado==='confirmado'?'solid':'dot';
+    const hdLabel=h.estado==='formando_hd'?'HD?':'HD';
+    traces.push({x:[new Date(h.hi_x),new Date(h.cab_x),new Date(h.hd_x)],
+      y:[h.hi_y,h.cab_y,h.hd_y],mode:'lines+markers+text',name:label,
+      line:{color:col,width:2,dash},
+      marker:{color:col,size:[7,11,7],symbol:isBear?'triangle-down':'triangle-up'},
+      text:['HI','CAB',hdLabel],textposition:isBear?'top center':'bottom center',
+      textfont:{color:col,size:10,family:'Share Tech Mono'},
+      hovertemplate:`<b>${label} — ${h.estado}</b><extra></extra>`});
+    if(h.nk1_x&&h.nk2_x){
+      traces.push({x:[new Date(h.nk1_x),new Date(h.nk2_x)],y:[h.nk1_y,h.nk2_y],
+        mode:'lines+text',name:`Neckline ${label}`,
+        line:{color:col,width:1.2,dash:'dashdot'},
+        text:['',`── Neck ${label}`],textposition:'top right',
+        textfont:{color:col,size:9,family:'Share Tech Mono'},
+        hoverinfo:'skip',showlegend:false});
+    }
+  }
+  addPatternM(pats.M);
+  addPatternW(pats.W);
+  addPatternHCH(pats.HCH);
+  addPatternHCH(pats.HCH_inv);
+
   Plotly.react('plotDiv',traces,layout,{responsive:true,scrollZoom:true,displayModeBar:false,doubleClick:'reset'});
   const div=document.getElementById('plotDiv');
   div._rl=ed=>{
@@ -961,6 +1023,57 @@ function renderP(apiData){
   renderRSI(cd,dates,xU);
   const bs=document.getElementById('t-eS'),bl=document.getElementById('t-eL');
   if(bs)bs.innerText=`EMA ${cfg.ema_short}`;if(bl)bl.innerText=`EMA ${cfg.ema_long}`;
+}
+
+function renderPatterns(data){
+  const box=document.getElementById('patBox');
+  const list=document.getElementById('patList');
+  if(!box||!list)return;
+  const pats=data.patterns||{};
+  const items=[];
+  const estadoColor={confirmado:'#ff1744',formando_p2:'#ff9800',formando_v2:'#00e676',formando_hd:'#ff9800',formando:'rgba(0,255,65,.4)'};
+  const estadoLabel={confirmado:'CONFIRMADO',formando_p2:'P2 FORMANDO',formando_v2:'V2 FORMANDO',formando_hd:'HD FORMANDO',formando:'FORMANDO'};
+  if(pats.M){
+    const c=estadoColor[pats.M.estado]||'#ff9800';
+    items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(255,23,68,.06);border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+      <span style="color:${c};font-weight:700">M Doble techo</span>
+      <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.M.estado]||''}</span><br>
+      <span style="color:rgba(255,255,255,.5)">P1: ${pats.M.p1_y?.toFixed(4)} · P2: ${pats.M.p2_y?.toFixed(4)} · Neck: ${pats.M.neckline?.toFixed(4)}</span>
+      ${pats.M.rsi_div?'<br><span style="color:#ff1744;font-size:9px">+ Div RSI bajista</span>':''}
+    </div>`);
+  }
+  if(pats.W){
+    const c=estadoColor[pats.W.estado]||'#00e676';
+    items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(0,230,118,.05);border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+      <span style="color:${c};font-weight:700">W Doble suelo</span>
+      <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.W.estado]||''}</span><br>
+      <span style="color:rgba(255,255,255,.5)">V1: ${pats.W.v1_y?.toFixed(4)} · V2: ${pats.W.v2_y?.toFixed(4)} · Neck: ${pats.W.neckline?.toFixed(4)}</span>
+      ${pats.W.rsi_div?'<br><span style="color:#00e676;font-size:9px">+ Div RSI alcista</span>':''}
+    </div>`);
+  }
+  if(pats.HCH){
+    const c=estadoColor[pats.HCH.estado]||'#ff9800';
+    items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(255,23,68,.06);border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+      <span style="color:${c};font-weight:700">HCH Bajista</span>
+      <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.HCH.estado]||''}</span><br>
+      <span style="color:rgba(255,255,255,.5)">CAB: ${pats.HCH.cab_y?.toFixed(4)} · Neck: ${pats.HCH.nk2_y?.toFixed(4)}</span>
+    </div>`);
+  }
+  if(pats.HCH_inv){
+    const c=estadoColor[pats.HCH_inv.estado]||'#00e676';
+    items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(0,230,118,.05);border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+      <span style="color:${c};font-weight:700">HCH Invertido Alcista</span>
+      <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.HCH_inv.estado]||''}</span><br>
+      <span style="color:rgba(255,255,255,.5)">CAB: ${pats.HCH_inv.cab_y?.toFixed(4)} · Neck: ${pats.HCH_inv.nk2_y?.toFixed(4)}</span>
+    </div>`);
+  }
+  if(items.length){
+    document.getElementById('patSym').innerText=sym;
+    list.innerHTML=items.join('');
+    box.style.display='block';
+  }else{
+    box.style.display='none';
+  }
 }
 
 function renderRSI(cd,dates,xU){
