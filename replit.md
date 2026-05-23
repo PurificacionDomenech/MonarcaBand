@@ -15,23 +15,31 @@ The app has been renamed from "The Matrix Lab" to **Trading Band**. Same structu
 - **Table**: "◈ BANDA" column instead of "⬡ FRACTAL" with bull/bear signal per asset
 - **Buttons**: "◈ Banda" + "↕ Cruces" instead of Fractales/Zonas/Toques
 
+### Nuevas funcionalidades (May 2026)
+- **RSI 14 con divergencias**: Detección de divergencias alcistas/bajistas en 3 fases (formándose/cruzada/excedida) con precisión tipo TradingView (RMA smoothing)
+- **Shark Fin (Aleta de Tiburón)**: Indicador de agotamiento extremo post-divergencia — detecta picos/valles en zonas RSI >70/<30 y compara con pivotes originales de la divergencia
+- **Columna "🦈 SHARK" en tabla**: Muestra estado del Shark Fin por activo (EXTREMA / CONFIRMADA / FORMÁNDOSE)
+- **Bitcoin visible por defecto**: BTC-USD ahora aparece en el grid principal (no hidden)
+- **Confluencia ⑦**: Shark Fin integrado en la matriz de confluencias con validación direccional (+2 cruzada, +4 excedida)
+- **Alertas inmediatas**: El sistema alerta vía Telegram cuando Shark Fin cruza o excede
+- **Deduplicación**: Claves `SHARK_{ticker}_{tipo}_{phase}` con caché 1h para evitar spam
+
 ### What stayed the same
-- All assets (USDJPY, GBPJPY, EURUSD, AUDUSD, GC=F, SI=F, CL=F, ^DJI, ^NDX + hidden extras)
+- All assets (USDJPY, GBPJPY, EURUSD, AUDUSD, GC=F, SI=F, CL=F, ^DJI, ^NDX + **BTC-USD** + hidden extras)
 - EMA 200/800 on chart
-- RSI 14 panel
 - Telegram + Email notification system
-- Scheduler (every 30 min)
-- Supabase authentication
+- Scheduler (every 30 min + TB confluences cada 5 min + RSI real-time cada 2 min)
+- Supabase authentication (login opcional, dashboard funciona en modo anónimo)
 - Watchlist (★ vigilancia)
-- All route structure: `/` → Splash login, `/app` → dashboard
+- Route structure: `/` → Splash, `/app` → dashboard (sin redirect forzado)
 
 ## Overview
 
 "Trading Band" is a web application that provides:
-- Real-time market data for stocks, indices, forex, and commodities via yfinance
-- Technical analysis: EMA 200/800, RSI, fractal levels
+- Real-time market data for stocks, indices, forex, commodities, and crypto via yfinance
+- Technical analysis: EMA 200/800, RSI 14 with divergences, MonarcaBand, Shark Fin exhaustion
 - Automatic alerts via Telegram and email
-- A scheduler that runs market checks every 4 hours
+- A scheduler that runs market checks every 30 min + TB confluences every 5 min + RSI real-time every 2 min
 - A Telegram bot integration for subscribing to alerts
 
 ## Stack
@@ -81,21 +89,23 @@ The app runs without any environment variables set — notifications are simply 
 
 ## Confluence Matrix (evaluate_confluencias)
 
-The system evaluates up to 6 confluences with **directional validation**:
+The system evaluates up to 7 confluences with **directional validation**:
 
-| # | Confluence | Direction |
-|---|---|---|
-| ① | RSI < 47 / > 53 | bullish (comprar barato) / bearish (vender caro) |
-| ② | EMA200 vs EMA800 | bullish (EMA200 > EMA800) / bearish |
-| ③ | Fractal touch | soporte → bullish / resistencia → bearish |
-| ④ | Day + Week open | both above → bullish / both below → bearish |
-| ⑤ | Fibonacci 55.9% | neutral (valid for both directions) |
-| ⑥ | Index components (^DJI/^NDX only) | ≥60% bullish/bearish |
+| # | Confluence | Direction | Points |
+|---|---|---|---|
+| ① | RSI < 47 / > 53 | bullish (comprar barato) / bearish (vender caro) | 1 |
+| ② | EMA200 vs EMA800 | bullish (EMA200 > EMA800) / bearish | 1 |
+| ③ | MonarcaBand touch | soporte → bullish / resistencia → bearish | 1 |
+| ④ | Day + Week open | both above → bullish / both below → bearish | 1 |
+| ⑤ | Fibonacci 55.9% | neutral (valid for both directions) | 1 |
+| ⑥ | Index components (^DJI/^NDX only) | ≥60% bullish/bearish | 1 |
+| ⑦ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
 
 **Directional rules:**
 - Strong signals (①②) determine direction; if they conflict → CONTRADICCIÓN
 - Weak/secondary signals (③④⑥) in opposite direction are **descartada** (discarded), not counted
 - Neutral signals (⑤) count regardless of direction
+- Shark Fin (⑦) only counts when aligned with strong direction; +2 for crossed, +4 for exceeded
 - FAVORABLE: ≥4 points aligned | INTERESANTE: 3 | CONSIDERAR: 2 | NO AHORA: ≤1
 
 **Schema `notification_prefs`**: `user_id, telegram_chat_id, telegram_enabled, email_address, email_enabled, tickers, timezone, created_at, id` — NO `language` column.

@@ -383,7 +383,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <thead>
             <tr>
               <th>★ ACTIVO</th><th class="r">PRECIO</th><th class="r">CAMBIO %</th>
-              <th class="c">RSI 14</th><th class="c">EMAs</th><th class="c">CRUCE</th>
+              <th class="c">RSI 14</th><th class="c">🦈 SHARK</th><th class="c">EMAs</th><th class="c">CRUCE</th>
               <th class="c">◈ BANDA</th><th class="c">ESTADO</th>
             </tr>
           </thead>
@@ -424,32 +424,19 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
   }
 
   try{
-    // Fuente de verdad: solo sessionStorage (tml_session) — se borra al cerrar el navegador.
-    // NO dependemos de Supabase persistSession en localStorage para no saltarnos el splash.
+    // Dashboard abierto: extraer UID de sesión si existe para notificaciones,
+    // pero NUNCA redirigir — el dashboard funciona en modo anónimo + login opcional.
     try {
       const raw = sessionStorage.getItem('tml_session');
       if (raw) {
-        // Extraer user.id del token de sesión para las prefs de notificación
         try {
           const parsed = JSON.parse(raw);
           const uid = parsed?.user?.id;
           if (uid) localStorage.setItem('tml_uid', uid);
         } catch(e) {}
-        // Sesión válida — nada más que hacer
-      } else {
-        // Sin sesión — espera 800ms y redirige si sigue sin sesión
-        // (para dar tiempo al navegador en redirección post-login)
-        setTimeout(() => {
-          if (!sessionStorage.getItem('tml_session')) {
-            window.location.replace('/');
-          }
-        }, 800);
       }
-    } catch(e) {
-      window.location.replace('/');
-    }
-
-  }catch(e){goHome()}
+    } catch(e) {}
+  }catch(e){}
 })();
 
 /* MATRIX RAIN */
@@ -485,7 +472,7 @@ const AA=[
   {n:'NAS100 Nasdaq',t:'^NDX',c:'📊',g:'Indices'},
   {n:'S&P 500',t:'^GSPC',c:'📊',g:'Indices',hidden:true},
   {n:'Russell 2000',t:'^RUT',c:'📊',g:'Indices',hidden:true},
-  {n:'Bitcoin',t:'BTC-USD',c:'🪙',g:'Cripto',hidden:true},
+  {n:'Bitcoin',t:'BTC-USD',c:'🪙',g:'Cripto',hidden:false},
   {n:'Ethereum',t:'ETH-USD',c:'🪙',g:'Cripto',hidden:true},
   {n:'SPY',t:'SPY',c:'ETF',g:'ETFs',hidden:true},
   {n:'VOO',t:'VOO',c:'ETF',g:'ETFs',hidden:true},
@@ -559,7 +546,7 @@ function buildGrid(){
   sorted.forEach(a=>{
     const id=fid(a.t),isW=wl.has(a.t);
     const sec=isW?'★ Favoritos':a.g||'';
-    if(sec!==lg){lg=sec;const s=document.createElement('tr');s.className='grp';s.innerHTML=`<td colspan="8">${sec}</td>`;tb.appendChild(s)}
+    if(sec!==lg){lg=sec;const s=document.createElement('tr');s.className='grp';s.innerHTML=`<td colspan="9">${sec}</td>`;tb.appendChild(s)}
     const tr=document.createElement('tr');
     tr.id='fc-'+id;tr.className='ar';
     tr.onclick=e=>{if(e.target.closest('.star'))return;loadSym(a.t)};
@@ -575,6 +562,7 @@ function buildGrid(){
       <td style="text-align:right"><span id="tp-${id}" style="font-family:var(--fm);font-size:11px;color:#fff">—</span></td>
       <td style="text-align:right"><span id="tc-${id}" style="font-family:var(--fm);font-size:11px;color:var(--muted)">—</span></td>
       <td style="text-align:center"><span id="tr-${id}" style="font-family:var(--fm);font-size:10px;padding:2px 6px;border-radius:3px;background:var(--gdim);color:rgba(0,255,65,.35)">—</span></td>
+      <td style="text-align:center;min-width:80px" id="tsh-${id}">—</td>
       <td style="text-align:center;min-width:110px" id="te-${id}">—</td>
       <td style="text-align:center" id="tcr-${id}">—</td>
       <td style="text-align:center;min-width:90px" id="tft-${id}"><span class="ftag none">—</span></td>
@@ -591,6 +579,7 @@ function rebuildGrid(){
       tp:document.getElementById(`tp-${id}`)?.innerHTML,
       tc:document.getElementById(`tc-${id}`)?.innerHTML,
       tr:document.getElementById(`tr-${id}`)?.innerHTML,
+      tsh:document.getElementById(`tsh-${id}`)?.innerHTML,
       te:document.getElementById(`te-${id}`)?.innerHTML,
       tcr:document.getElementById(`tcr-${id}`)?.innerHTML,
       tft:document.getElementById(`tft-${id}`)?.innerHTML,
@@ -601,7 +590,7 @@ function rebuildGrid(){
   AA.filter(a=>!a.hidden).forEach(a=>{
     const id=fid(a.t),c=cache[a.t];if(!c)return;
     const set=(sel,val)=>{const el=document.getElementById(sel);if(el&&val&&val!=='—')el.innerHTML=val};
-    set(`tp-${id}`,c.tp);set(`tc-${id}`,c.tc);set(`tr-${id}`,c.tr);
+    set(`tp-${id}`,c.tp);set(`tc-${id}`,c.tc);set(`tr-${id}`,c.tr);set(`tsh-${id}`,c.tsh);
     set(`te-${id}`,c.te);set(`tcr-${id}`,c.tcr);set(`tft-${id}`,c.tft);set(`tes-${id}`,c.tes);
     const cv=document.getElementById(`sp-${id}`);
     if(cv&&spkCache[a.t])drawSpk(id,spkCache[a.t]);
@@ -666,6 +655,18 @@ async function loadRow(t){
       cr.innerHTML=d.ema_short>d.ema_long
         ?`<span style="font-family:var(--fm);color:#00ff41;font-size:10px;text-shadow:0 0 5px rgba(0,255,65,.4)">▲ ${sn}/${ln}</span>`
         :`<span style="font-family:var(--fm);color:#ff3333;font-size:10px">▼ ${sn}/${ln}</span>`;
+    }
+    const she=document.getElementById(`tsh-${id}`);
+    if(she){
+      if(d.shark_phase && d.shark_phase!=='none'){
+        const isExtreme=d.shark_phase==='exceeded';
+        const isCross=d.shark_phase==='crossed';
+        const bull=d.shark_tipo==='bullish';
+        const emoji=isExtreme?'⚡🦈':(isCross?'🦈':'🦈');
+        const cls=isExtreme?'maj-s':(isCross?'maj-r':'none');
+        const txt=isExtreme?'EXTREMA':(isCross?'CONFIRMADA':'FORMÁNDOSE');
+        she.innerHTML=`<span class="ftag ${cls}">${emoji} ${txt}</span>`;
+      }else{she.innerHTML='<span class="ftag none">—</span>'}
     }
     const fe=document.getElementById(`tft-${id}`);
     if(fe){

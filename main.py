@@ -1616,7 +1616,10 @@ if HAS_SCHEDULER:
         try:
             scheduler = AsyncIOScheduler()
             scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
-            scheduler.add_job(lambda: _check_tb_confluences(WATCH_TICKERS),
+            from apscheduler.triggers.interval import IntervalTrigger
+            async def _tb_confl_job():
+                await _check_tb_confluences(WATCH_TICKERS)
+            scheduler.add_job(_tb_confl_job,
                               "interval", minutes=5, id="tb_confl_5m")
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
@@ -1988,6 +1991,15 @@ async def _compute_row(ticker: str) -> dict:
                     tb_cross_recent = True
                     break
 
+    # Datos de Shark Fin para la tabla
+    shark_phase = "none"
+    shark_tipo = None
+    if confl:
+        shark_conf = next((c for c in confl.get("confluencias", []) if c.get("id") == 7), None)
+        if shark_conf and shark_conf.get("ok"):
+            shark_phase = "exceeded" if "EXTREMA" in shark_conf.get("texto", "") else "crossed"
+            shark_tipo = shark_conf.get("tipo")
+
     result = {
         "ticker": key,
         "price": last,
@@ -2001,6 +2013,8 @@ async def _compute_row(ticker: str) -> dict:
         "tb_trigger": last_trig,
         "tb_average": last_avg,
         "tb_cross_recent": tb_cross_recent,
+        "shark_phase": shark_phase,
+        "shark_tipo": shark_tipo,
         "confluencias_puntos": confl["puntos"] if confl else 0,
         "confluencias_estado": confl["estado"] if confl else "NO AHORA",
         "confluencias": confl["confluencias"] if confl else [],

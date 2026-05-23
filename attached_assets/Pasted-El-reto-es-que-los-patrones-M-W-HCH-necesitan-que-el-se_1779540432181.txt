@@ -1,0 +1,750 @@
+El reto es que los patrones M/W/HCH necesitan que el segundo pico/valle se esté formando en la vela actual — no esperar a que esté confirmado. Hay dos problemas a resolver:
+Problema 1 — Tiempo real: yfinance con interval="4h" tiene delay de hasta 15 minutos en la vela actual. Para verdadero tiempo real necesitas datos de 1m o 5m y agregarlos.
+Problema 2 — Dibujar en Plotly: Los patrones hay que convertirlos en shapes y annotations que Plotly entienda.
+Déjame mostrarte exactamente qué añadir en cada archivo:
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+VvisualizeVvisualize show_widgetAhora todo el código. Empezamos por main.py:
+Bloque 1 — Las 4 funciones de detección (añadir después de calc_indicators):
+pythondef calc_rsi_divergence(df, lookback=14):
+    """
+    Detecta divergencias RSI. Retorna coordenadas para dibujar en Plotly.
+    """
+    result = {
+        "bear_div": False, "bull_div": False,
+        "hidden_bear": False, "hidden_bull": False,
+        "bear_lines": [],   # [(x0, y0_rsi, x1, y1_rsi, x0_price, y0_price, x1_price, y1_price)]
+        "bull_lines": [],
+    }
+    if len(df) < lookback * 2 + 5:
+        return result
+
+    close = df["Close"]
+    high  = df["High"]
+    low   = df["Low"]
+    rsi   = df["RSI"]
+    if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
+    if isinstance(high,  pd.DataFrame): high  = high.iloc[:, 0]
+    if isinstance(low,   pd.DataFrame): low   = low.iloc[:, 0]
+    if isinstance(rsi,   pd.DataFrame): rsi   = rsi.iloc[:, 0]
+
+    n  = len(df)
+    lb = max(3, min(lookback // 2, 5))
+
+    def is_pivot_high(s, i, l):
+        if i < l or i + l >= len(s): return False
+        v = s.iloc[i]
+        return all(s.iloc[i-j] <= v for j in range(1, l+1)) and \
+               all(s.iloc[i+j] <= v for j in range(1, l+1))
+
+    def is_pivot_low(s, i, l):
+        if i < l or i + l >= len(s): return False
+        v = s.iloc[i]
+        return all(s.iloc[i-j] >= v for j in range(1, l+1)) and \
+               all(s.iloc[i+j] >= v for j in range(1, l+1))
+
+    search = min(lookback * 4, n - lb - 1)
+    ph = [i for i in range(lb, lb + search) if is_pivot_high(rsi, i, lb)]
+    pl = [i for i in range(lb, lb + search) if is_pivot_low(rsi,  i, lb)]
+
+    # Divergencia bajista: precio HH, RSI LH
+    if len(ph) >= 2:
+        i1, i2 = ph[-2], ph[-1]
+        if 3 <= (i2 - i1) <= lookback * 5:
+            idx1, idx2 = n - 1 - i1, n - 1 - i2
+            p_hh = float(high.iloc[idx1]) > float(high.iloc[idx2])
+            r_lh = float(rsi.iloc[idx1])  < float(rsi.iloc[idx2])
+            if p_hh and r_lh:
+                result["bear_div"] = True
+                result["bear_lines"].append({
+                    "x0": df.index[idx2], "x1": df.index[idx1],
+                    "rsi0": float(rsi.iloc[idx2]),  "rsi1": float(rsi.iloc[idx1]),
+                    "p0":   float(high.iloc[idx2]), "p1":   float(high.iloc[idx1]),
+                    "tipo": "regular_bear"
+                })
+
+    # Divergencia alcista: precio LL, RSI HL
+    if len(pl) >= 2:
+        i1, i2 = pl[-2], pl[-1]
+        if 3 <= (i2 - i1) <= lookback * 5:
+            idx1, idx2 = n - 1 - i1, n - 1 - i2
+            p_ll = float(low.iloc[idx1]) < float(low.iloc[idx2])
+            r_hl = float(rsi.iloc[idx1]) > float(rsi.iloc[idx2])
+            if p_ll and r_hl:
+                result["bull_div"] = True
+                result["bull_lines"].append({
+                    "x0": df.index[idx2], "x1": df.index[idx1],
+                    "rsi0": float(rsi.iloc[idx2]), "rsi1": float(rsi.iloc[idx1]),
+                    "p0":   float(low.iloc[idx2]), "p1":   float(low.iloc[idx1]),
+                    "tipo": "regular_bull"
+                })
+
+    # Divergencia bajista oculta: precio LH, RSI HH
+    if len(ph) >= 2:
+        i1, i2 = ph[-2], ph[-1]
+        if 3 <= (i2 - i1) <= lookback * 5:
+            idx1, idx2 = n - 1 - i1, n - 1 - i2
+            p_lh = float(high.iloc[idx1]) < float(high.iloc[idx2])
+            r_hh = float(rsi.iloc[idx1])  > float(rsi.iloc[idx2])
+            if p_lh and r_hh:
+                result["hidden_bear"] = True
+                result["bear_lines"].append({
+                    "x0": df.index[idx2], "x1": df.index[idx1],
+                    "rsi0": float(rsi.iloc[idx2]),  "rsi1": float(rsi.iloc[idx1]),
+                    "p0":   float(high.iloc[idx2]), "p1":   float(high.iloc[idx1]),
+                    "tipo": "hidden_bear"
+                })
+
+    # Divergencia alcista oculta: precio HL, RSI LL
+    if len(pl) >= 2:
+        i1, i2 = pl[-2], pl[-1]
+        if 3 <= (i2 - i1) <= lookback * 5:
+            idx1, idx2 = n - 1 - i1, n - 1 - i2
+            p_hl = float(low.iloc[idx1]) > float(low.iloc[idx2])
+            r_ll = float(rsi.iloc[idx1]) < float(rsi.iloc[idx2])
+            if p_hl and r_ll:
+                result["hidden_bull"] = True
+                result["bull_lines"].append({
+                    "x0": df.index[idx2], "x1": df.index[idx1],
+                    "rsi0": float(rsi.iloc[idx2]), "rsi1": float(rsi.iloc[idx1]),
+                    "p0":   float(low.iloc[idx2]), "p1":   float(low.iloc[idx1]),
+                    "tipo": "hidden_bull"
+                })
+
+    return result
+
+
+def calc_pattern_mw(df, lookback=40, tol=0.018):
+    """
+    Detecta M (doble techo) y W (doble suelo).
+    Retorna coordenadas completas + estado (confirmado/formando).
+    'formando' = P2/V2 está dentro de la zona del primero pero aún no ha roto neckline.
+    """
+    result = {"M": None, "W": None}
+    if len(df) < 15:
+        return result
+
+    high  = df["High"]
+    low   = df["Low"]
+    close = df["Close"]
+    rsi   = df["RSI"]
+    if isinstance(high,  pd.DataFrame): high  = high.iloc[:, 0]
+    if isinstance(low,   pd.DataFrame): low   = low.iloc[:, 0]
+    if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
+    if isinstance(rsi,   pd.DataFrame): rsi   = rsi.iloc[:, 0]
+
+    window_df = df.iloc[-lookback:]
+    wh = high.iloc[-lookback:]
+    wl = low.iloc[-lookback:]
+    wr = rsi.iloc[-lookback:]
+    wc = close.iloc[-lookback:]
+    dates = list(window_df.index)
+    n = len(window_df)
+
+    def local_highs(series, min_dist=3):
+        peaks = []
+        for i in range(2, n - 2):
+            v = float(series.iloc[i])
+            if (v >= float(series.iloc[i-1]) and v >= float(series.iloc[i-2]) and
+                v >= float(series.iloc[i+1]) and v >= float(series.iloc[i+2])):
+                if not peaks or (i - peaks[-1][0]) >= min_dist:
+                    peaks.append((i, v))
+        return peaks
+
+    def local_lows(series, min_dist=3):
+        troughs = []
+        for i in range(2, n - 2):
+            v = float(series.iloc[i])
+            if (v <= float(series.iloc[i-1]) and v <= float(series.iloc[i-2]) and
+                v <= float(series.iloc[i+1]) and v <= float(series.iloc[i+2])):
+                if not troughs or (i - troughs[-1][0]) >= min_dist:
+                    troughs.append((i, v))
+        return troughs
+
+    highs  = local_highs(wh)
+    lows   = local_lows(wl)
+
+    # ── Patrón M ─────────────────────────────────────────
+    if len(highs) >= 2:
+        for i in range(len(highs) - 1):
+            h1_i, h1_v = highs[i]
+            h2_i, h2_v = highs[-1]
+            if h2_i - h1_i < 5:
+                continue
+            if abs(h1_v - h2_v) / h1_v <= tol:
+                # Neckline: mínimo entre los dos picos
+                mid_lows = [lows[j] for j in range(len(lows))
+                            if h1_i < lows[j][0] < h2_i]
+                neckline_v = min((v for _, v in mid_lows), default=None)
+                if neckline_v is None:
+                    neckline_v = float(wl.iloc[h1_i:h2_i].min())
+
+                rsi1 = float(wr.iloc[h1_i])
+                rsi2 = float(wr.iloc[h2_i])
+                current_price = float(wc.iloc[-1])
+
+                # Estado
+                if current_price < neckline_v:
+                    estado = "confirmado"
+                elif abs(current_price - h2_v) / h2_v <= tol * 1.5:
+                    estado = "formando_p2"
+                else:
+                    estado = "formando"
+
+                result["M"] = {
+                    "p1_x": dates[h1_i], "p1_y": h1_v,
+                    "p2_x": dates[h2_i], "p2_y": h2_v,
+                    "neckline": neckline_v,
+                    "rsi1": rsi1, "rsi2": rsi2,
+                    "rsi_div": rsi2 < rsi1 - 2,
+                    "estado": estado,
+                    "bearish": True,
+                }
+                break
+
+    # ── Patrón W ─────────────────────────────────────────
+    if len(lows) >= 2:
+        for i in range(len(lows) - 1):
+            l1_i, l1_v = lows[i]
+            l2_i, l2_v = lows[-1]
+            if l2_i - l1_i < 5:
+                continue
+            if abs(l1_v - l2_v) / l1_v <= tol:
+                mid_highs = [highs[j] for j in range(len(highs))
+                             if l1_i < highs[j][0] < l2_i]
+                neckline_v = max((v for _, v in mid_highs), default=None)
+                if neckline_v is None:
+                    neckline_v = float(wh.iloc[l1_i:l2_i].max())
+
+                rsi1 = float(wr.iloc[l1_i])
+                rsi2 = float(wr.iloc[l2_i])
+                current_price = float(wc.iloc[-1])
+
+                if current_price > neckline_v:
+                    estado = "confirmado"
+                elif abs(current_price - l2_v) / l2_v <= tol * 1.5:
+                    estado = "formando_v2"
+                else:
+                    estado = "formando"
+
+                result["W"] = {
+                    "v1_x": dates[l1_i], "v1_y": l1_v,
+                    "v2_x": dates[l2_i], "v2_y": l2_v,
+                    "neckline": neckline_v,
+                    "rsi1": rsi1, "rsi2": rsi2,
+                    "rsi_div": rsi2 > rsi1 + 2,
+                    "estado": estado,
+                    "bullish": True,
+                }
+                break
+
+    return result
+
+
+def calc_pattern_hch(df, lookback=60, tol=0.02):
+    """
+    Detecta HCH (bajista) e HCH invertido (alcista).
+    Estado 'formando_hd' = hombro derecho aún no completado.
+    """
+    result = {"HCH": None, "HCH_inv": None}
+    if len(df) < 20:
+        return result
+
+    high  = df["High"]
+    low   = df["Low"]
+    close = df["Close"]
+    rsi   = df["RSI"]
+    if isinstance(high,  pd.DataFrame): high  = high.iloc[:, 0]
+    if isinstance(low,   pd.DataFrame): low   = low.iloc[:, 0]
+    if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
+    if isinstance(rsi,   pd.DataFrame): rsi   = rsi.iloc[:, 0]
+
+    wh = high.iloc[-lookback:]
+    wl = low.iloc[-lookback:]
+    wr = rsi.iloc[-lookback:]
+    wc = close.iloc[-lookback:]
+    dates = list(df.index[-lookback:])
+    n = len(wh)
+
+    def find_peaks(series, min_dist=4):
+        peaks = []
+        for i in range(3, n - 3):
+            v = float(series.iloc[i])
+            if all(v >= float(series.iloc[i-j]) for j in range(1, 4)) and \
+               all(v >= float(series.iloc[i+j]) for j in range(1, 4)):
+                if not peaks or (i - peaks[-1][0]) >= min_dist:
+                    peaks.append((i, v, dates[i]))
+        return peaks
+
+    def find_troughs(series, min_dist=4):
+        troughs = []
+        for i in range(3, n - 3):
+            v = float(series.iloc[i])
+            if all(v <= float(series.iloc[i-j]) for j in range(1, 4)) and \
+               all(v <= float(series.iloc[i+j]) for j in range(1, 4)):
+                if not troughs or (i - troughs[-1][0]) >= min_dist:
+                    troughs.append((i, v, dates[i]))
+        return troughs
+
+    peaks   = find_peaks(wh)
+    troughs = find_troughs(wl)
+    current = float(wc.iloc[-1])
+
+    # ── HCH bajista: HI < CAB > HD, con HI ≈ HD ─────────
+    if len(peaks) >= 3:
+        for i in range(len(peaks) - 2):
+            hi_i, hi_v, hi_x = peaks[i]
+            cab_i, cab_v, cab_x = peaks[i+1]
+            hd_i, hd_v, hd_x = peaks[-1]
+
+            if cab_v <= hi_v or cab_v <= hd_v:
+                continue
+            if abs(hi_v - hd_v) / hi_v > tol * 2:
+                continue
+            if hd_i - cab_i < 5:
+                continue
+
+            # Neckline: recta entre los dos valles entre HI-CAB y CAB-HD
+            v1 = [t for t in troughs if hi_i < t[0] < cab_i]
+            v2 = [t for t in troughs if cab_i < t[0] < hd_i]
+            if not v1 or not v2:
+                continue
+            nk1_i, nk1_v, nk1_x = min(v1, key=lambda x: x[1])
+            nk2_i, nk2_v, nk2_x = min(v2, key=lambda x: x[1])
+
+            if current < nk2_v:
+                estado = "confirmado"
+            elif abs(current - hd_v) / hd_v <= tol:
+                estado = "formando_hd"
+            else:
+                estado = "formando"
+
+            result["HCH"] = {
+                "hi_x": hi_x,   "hi_y": hi_v,
+                "cab_x": cab_x, "cab_y": cab_v,
+                "hd_x": hd_x,   "hd_y": hd_v,
+                "nk1_x": nk1_x, "nk1_y": nk1_v,
+                "nk2_x": nk2_x, "nk2_y": nk2_v,
+                "neckline_slope": (nk2_v - nk1_v) / max(nk2_i - nk1_i, 1),
+                "rsi_hi": float(wr.iloc[hi_i]),
+                "rsi_cab": float(wr.iloc[cab_i]),
+                "rsi_hd": float(wr.iloc[hd_i]),
+                "estado": estado,
+                "bearish": True,
+            }
+            break
+
+    # ── HCH invertido alcista: hi < cab < hd (invertido) ─
+    if len(troughs) >= 3:
+        for i in range(len(troughs) - 2):
+            hi_i, hi_v, hi_x = troughs[i]
+            cab_i, cab_v, cab_x = troughs[i+1]
+            hd_i, hd_v, hd_x = troughs[-1]
+
+            if cab_v >= hi_v or cab_v >= hd_v:
+                continue
+            if abs(hi_v - hd_v) / hi_v > tol * 2:
+                continue
+            if hd_i - cab_i < 5:
+                continue
+
+            p1 = [t for t in peaks if hi_i < t[0] < cab_i]
+            p2 = [t for t in peaks if cab_i < t[0] < hd_i]
+            if not p1 or not p2:
+                continue
+            nk1_i, nk1_v, nk1_x = max(p1, key=lambda x: x[1])
+            nk2_i, nk2_v, nk2_x = max(p2, key=lambda x: x[1])
+
+            if current > nk2_v:
+                estado = "confirmado"
+            elif abs(current - hd_v) / hd_v <= tol:
+                estado = "formando_hd"
+            else:
+                estado = "formando"
+
+            result["HCH_inv"] = {
+                "hi_x": hi_x,   "hi_y": hi_v,
+                "cab_x": cab_x, "cab_y": cab_v,
+                "hd_x": hd_x,   "hd_y": hd_v,
+                "nk1_x": nk1_x, "nk1_y": nk1_v,
+                "nk2_x": nk2_x, "nk2_y": nk2_v,
+                "rsi_hi": float(wr.iloc[hi_i]),
+                "rsi_cab": float(wr.iloc[cab_i]),
+                "rsi_hd": float(wr.iloc[hd_i]),
+                "estado": estado,
+                "bullish": True,
+            }
+            break
+
+    return result
+
+
+def calc_candle_patterns(df):
+    if len(df) < 3:
+        return {}
+    o  = float(df["Open"].iloc[-1])
+    h  = float(df["High"].iloc[-1])
+    l  = float(df["Low"].iloc[-1])
+    c  = float(df["Close"].iloc[-1])
+    o2 = float(df["Open"].iloc[-2])
+    c2 = float(df["Close"].iloc[-2])
+    body    = abs(c - o)
+    rng     = h - l if h > l else 0.0001
+    upper_w = h - max(c, o)
+    lower_w = min(c, o) - l
+    body_p  = body / rng
+    patterns = {}
+    if c2 < o2 and c > o and c > o2 and o < c2:
+        patterns["engulfing_bull"] = {"tipo":"bullish","desc":"Engulfing alcista"}
+    if c2 > o2 and c < o and c < o2 and o > c2:
+        patterns["engulfing_bear"] = {"tipo":"bearish","desc":"Engulfing bajista"}
+    if upper_w >= body * 2 and lower_w <= body * 0.5 and body_p < 0.35:
+        patterns["shooting_star"] = {"tipo":"bearish","desc":"Shooting star"}
+    if lower_w >= body * 2 and upper_w <= body * 0.5 and body_p < 0.35:
+        patterns["hammer"] = {"tipo":"bullish","desc":"Hammer"}
+    if lower_w >= body * 3 and upper_w <= body:
+        patterns["pinbar_bull"] = {"tipo":"bullish","desc":"Pin bar alcista"}
+    if upper_w >= body * 3 and lower_w <= body:
+        patterns["pinbar_bear"] = {"tipo":"bearish","desc":"Pin bar bajista"}
+    if c > o and upper_w <= body * 0.05 and lower_w <= body * 0.05 and body_p > 0.85:
+        patterns["marubozu_bull"] = {"tipo":"bullish","desc":"Marubozu alcista"}
+    if c < o and upper_w <= body * 0.05 and lower_w <= body * 0.05 and body_p > 0.85:
+        patterns["marubozu_bear"] = {"tipo":"bearish","desc":"Marubozu bajista"}
+    return patterns
+Bloque 2 — En get_chart(), añadir al return:
+python        # Calcular patrones
+        div_data    = calc_rsi_divergence(df)
+        mw_data     = calc_pattern_mw(df)
+        hch_data    = calc_pattern_hch(df)
+        candle_data = calc_candle_patterns(df)
+
+        # Serializar fechas para JSON
+        def ser_date(d):
+            try: return int(pd.Timestamp(d).timestamp() * 1000)
+            except: return None
+
+        def ser_div_lines(lines):
+            out = []
+            for l in lines:
+                out.append({**l,
+                    "x0": ser_date(l["x0"]),
+                    "x1": ser_date(l["x1"])})
+            return out
+
+        def ser_pattern_dates(p):
+            if not p: return p
+            out = dict(p)
+            for k in list(out.keys()):
+                if k.endswith("_x") and out[k] is not None:
+                    out[k] = ser_date(out[k])
+            return out
+
+        return {
+            # ... todo lo que ya retornaba ...
+            "divergences": {
+                "bear_div":    div_data["bear_div"],
+                "bull_div":    div_data["bull_div"],
+                "hidden_bear": div_data["hidden_bear"],
+                "hidden_bull": div_data["hidden_bull"],
+                "bear_lines":  ser_div_lines(div_data["bear_lines"]),
+                "bull_lines":  ser_div_lines(div_data["bull_lines"]),
+            },
+            "patterns": {
+                "M":       ser_pattern_dates(mw_data.get("M")),
+                "W":       ser_pattern_dates(mw_data.get("W")),
+                "HCH":     ser_pattern_dates(hch_data.get("HCH")),
+                "HCH_inv": ser_pattern_dates(hch_data.get("HCH_inv")),
+                "candles": candle_data,
+            }
+        }
+Bloque 3 — En _rsi_realtime_check(), añadir alerta de P2/V2/HD:
+python        # Alerta de patrón formándose en tiempo real
+        mw  = calc_pattern_mw(df_4h)
+        hch = calc_pattern_hch(df_4h)
+
+        for pat_name, pat_data in [("M", mw.get("M")), ("W", mw.get("W")),
+                                    ("HCH", hch.get("HCH")), ("HCH_inv", hch.get("HCH_inv"))]:
+            if not pat_data:
+                continue
+            estado = pat_data.get("estado", "")
+            if estado in ("formando_p2", "formando_v2", "formando_hd"):
+                dedup_key = f"PAT_{ticker}_{pat_name}_forming"
+                if now - _sent_cache.get(dedup_key, 0) < _DEDUP_SECONDS:
+                    continue
+                etiqueta = {"formando_p2": "P2 tocando zona", "formando_v2": "V2 tocando zona",
+                            "formando_hd": "HD formándose"}[estado]
+                dir_ = "bearish" if pat_data.get("bearish") else "bullish"
+                alertas_rsi.setdefault(ticker, []).append({
+                    "nivel": dir_,
+                    "msg": f"[{ticker}] Patron {pat_name} — {etiqueta}",
+                    "hora": pd.Timestamp.now(tz="UTC").strftime("%d/%m %H:%M"),
+                    "ts_utc_iso": pd.Timestamp.now(tz="UTC").isoformat(),
+                    "dia_num": pd.Timestamp.now(tz="UTC").weekday(),
+                    "dia_name": pd.Timestamp.now(tz="UTC").strftime("%A"),
+                    "resultado": None,
+                    "components_ctx": None,
+                })
+                _sent_cache[dedup_key] = now
+Bloque 4 — En renderP() del index.html, añadir trazas de patrones al gráfico:
+Dentro de renderP(apiData), después de las trazas existentes y antes de Plotly.react(...):
+javascript    // ── PATRONES M / W / HCH ─────────────────────────
+    const pats = apiData.patterns || {};
+
+    function addPatternM(m) {
+        if (!m) return;
+        const col = m.estado === 'confirmado' ? 'rgba(255,23,68,.9)' : 'rgba(255,152,0,.8)';
+        // Línea P1 → P2
+        traces.push({
+            x: [new Date(m.p1_x), new Date(m.p2_x)],
+            y: [m.p1_y, m.p2_y],
+            mode: 'lines+markers+text',
+            name: 'Patrón M',
+            line: {color: col, width: 2, dash: m.estado === 'confirmado' ? 'solid' : 'dot'},
+            marker: {color: col, size: 8, symbol: 'triangle-down'},
+            text: ['P1', 'P2'],
+            textposition: 'top center',
+            textfont: {color: col, size: 10, family: 'Share Tech Mono'},
+            hovertemplate: `<b>Patrón M — ${m.estado}</b><br>RSI div: ${m.rsi_div ? 'Sí' : 'No'}<extra></extra>`
+        });
+        // Neckline
+        shapes.push({
+            type: 'line', xref: 'paper', yref: 'y',
+            x0: 0, x1: 1, y0: m.neckline, y1: m.neckline,
+            line: {color: col, width: 1.5, dash: 'dashdot'}
+        });
+        traces.push({
+            x: [new Date(m.p2_x)], y: [m.neckline],
+            mode: 'text', name: '',
+            text: ['── Neckline M'],
+            textposition: 'bottom right',
+            textfont: {color: col, size: 9, family: 'Share Tech Mono'},
+            hoverinfo: 'skip', showlegend: false
+        });
+    }
+
+    function addPatternW(w) {
+        if (!w) return;
+        const col = w.estado === 'confirmado' ? 'rgba(0,230,118,.9)' : 'rgba(0,200,255,.8)';
+        traces.push({
+            x: [new Date(w.v1_x), new Date(w.v2_x)],
+            y: [w.v1_y, w.v2_y],
+            mode: 'lines+markers+text',
+            name: 'Patrón W',
+            line: {color: col, width: 2, dash: w.estado === 'confirmado' ? 'solid' : 'dot'},
+            marker: {color: col, size: 8, symbol: 'triangle-up'},
+            text: ['V1', 'V2'],
+            textposition: 'bottom center',
+            textfont: {color: col, size: 10, family: 'Share Tech Mono'},
+            hovertemplate: `<b>Patrón W — ${w.estado}</b><br>RSI div: ${w.rsi_div ? 'Sí' : 'No'}<extra></extra>`
+        });
+        shapes.push({
+            type: 'line', xref: 'paper', yref: 'y',
+            x0: 0, x1: 1, y0: w.neckline, y1: w.neckline,
+            line: {color: col, width: 1.5, dash: 'dashdot'}
+        });
+        traces.push({
+            x: [new Date(w.v2_x)], y: [w.neckline],
+            mode: 'text', name: '',
+            text: ['── Neckline W'],
+            textposition: 'top right',
+            textfont: {color: col, size: 9, family: 'Share Tech Mono'},
+            hoverinfo: 'skip', showlegend: false
+        });
+    }
+
+    function addPatternHCH(h) {
+        if (!h) return;
+        const col = h.bearish
+            ? (h.estado === 'confirmado' ? 'rgba(255,23,68,.9)' : 'rgba(255,152,0,.8)')
+            : (h.estado === 'confirmado' ? 'rgba(0,230,118,.9)' : 'rgba(0,200,255,.8)');
+        const label = h.bearish ? 'HCH' : 'HCH inv';
+        // HI → CAB → HD
+        traces.push({
+            x: [new Date(h.hi_x), new Date(h.cab_x), new Date(h.hd_x)],
+            y: [h.hi_y,  h.cab_y, h.hd_y],
+            mode: 'lines+markers+text',
+            name: label,
+            line: {color: col, width: 2, dash: h.estado === 'confirmado' ? 'solid' : 'dot'},
+            marker: {color: col, size: [7, 10, 7],
+                     symbol: h.bearish ? 'triangle-down' : 'triangle-up'},
+            text: ['HI', 'CAB', h.estado === 'formando_hd' ? 'HD?' : 'HD'],
+            textposition: h.bearish ? 'top center' : 'bottom center',
+            textfont: {color: col, size: 10, family: 'Share Tech Mono'},
+            hovertemplate: `<b>${label} — ${h.estado}</b><extra></extra>`
+        });
+        // Neckline como línea entre los dos valles/picos laterales
+        traces.push({
+            x: [new Date(h.nk1_x), new Date(h.nk2_x)],
+            y: [h.nk1_y, h.nk2_y],
+            mode: 'lines+text',
+            name: `Neckline ${label}`,
+            line: {color: col, width: 1.5, dash: 'dashdot'},
+            text: ['', `── Neckline ${label}`],
+            textposition: 'top right',
+            textfont: {color: col, size: 9, family: 'Share Tech Mono'},
+            hoverinfo: 'skip', showlegend: false
+        });
+    }
+
+    addPatternM(pats.M);
+    addPatternW(pats.W);
+    addPatternHCH(pats.HCH);
+    addPatternHCH(pats.HCH_inv);
+Bloque 5 — En renderRSI(), añadir líneas de divergencia:
+javascript    // ── LÍNEAS DE DIVERGENCIA EN EL RSI ──────────────
+    const divs = apiData?.divergences || {};
+    const divTraces = [];
+
+    (divs.bear_lines || []).forEach(l => {
+        divTraces.push({
+            x: [new Date(l.x0), new Date(l.x1)],
+            y: [l.rsi0, l.rsi1],
+            mode: 'lines+markers',
+            name: l.tipo === 'hidden_bear' ? 'Div bajista oculta' : 'Div bajista',
+            line: {color: 'rgba(255,23,68,.9)', width: 2,
+                   dash: l.tipo === 'hidden_bear' ? 'dot' : 'solid'},
+            marker: {color: 'rgba(255,23,68,.9)', size: 6},
+            hovertemplate: `<b>${l.tipo}</b><br>RSI: %{y:.1f}<extra></extra>`
+        });
+        // También en precio
+        traces.push({
+            x: [new Date(l.x0), new Date(l.x1)],
+            y: [l.p0, l.p1],
+            mode: 'lines',
+            name: '',
+            line: {color: 'rgba(255,23,68,.35)', width: 1, dash: 'dot'},
+            hoverinfo: 'skip', showlegend: false
+        });
+    });
+
+    (divs.bull_lines || []).forEach(l => {
+        divTraces.push({
+            x: [new Date(l.x0), new Date(l.x1)],
+            y: [l.rsi0, l.rsi1],
+            mode: 'lines+markers',
+            name: l.tipo === 'hidden_bull' ? 'Div alcista oculta' : 'Div alcista',
+            line: {color: 'rgba(0,230,118,.9)', width: 2,
+                   dash: l.tipo === 'hidden_bull' ? 'dot' : 'solid'},
+            marker: {color: 'rgba(0,230,118,.9)', size: 6},
+            hovertemplate: `<b>${l.tipo}</b><br>RSI: %{y:.1f}<extra></extra>`
+        });
+        traces.push({
+            x: [new Date(l.x0), new Date(l.x1)],
+            y: [l.p0, l.p1],
+            mode: 'lines',
+            name: '',
+            line: {color: 'rgba(0,230,118,.35)', width: 1, dash: 'dot'},
+            hoverinfo: 'skip', showlegend: false
+        });
+    });
+
+    // Añadir divTraces al array de trazas del RSI (en Plotly.react de rsiDiv)
+    // Añade ...divTraces al array que ya pasas a Plotly.react('rsiDiv', [...])
+Bloque 6 — Panel de patrones en el sidebar (añadir después de #alertBox en el HTML):
+html<div class="card" id="patBox" style="padding:11px;display:none">
+  <div style="font-family:var(--fd);font-size:8px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.12em;color:rgba(0,255,65,.3);margin-bottom:8px">
+    🕯️ PATRONES — <span id="patSym" style="color:var(--g)"></span>
+  </div>
+  <div id="patList" style="display:flex;flex-direction:column;gap:5px"></div>
+</div>
+Y la función JS que lo alimenta, dentro del loadSym() después de renderFL:
+javascriptfunction renderPatterns(data) {
+    const box  = document.getElementById('patBox');
+    const list = document.getElementById('patList');
+    const pats = data.patterns || {};
+    const divs = data.divergences || {};
+    const items = [];
+
+    const estadoColor = {
+        confirmado:   '#ff1744',
+        formando_p2:  '#ff9800',
+        formando_v2:  '#00e676',
+        formando_hd:  '#ff9800',
+        formando:     'rgba(0,255,65,.4)'
+    };
+    const estadoLabel = {
+        confirmado:   'CONFIRMADO',
+        formando_p2:  'P2 FORMANDO',
+        formando_v2:  'V2 FORMANDO',
+        formando_hd:  'HD FORMANDO',
+        formando:     'FORMANDO'
+    };
+
+    if (pats.M) {
+        const c = estadoColor[pats.M.estado] || '#ff9800';
+        items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(255,23,68,.06);
+            border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+            <span style="color:${c};font-weight:700">M Doble techo</span>
+            <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.M.estado]||''}</span><br>
+            <span style="color:rgba(255,255,255,.5)">P1: ${pats.M.p1_y?.toFixed(2)} · P2: ${pats.M.p2_y?.toFixed(2)}
+            · Neck: ${pats.M.neckline?.toFixed(2)}</span>${pats.M.rsi_div ?
+            '<br><span style="color:#ff1744;font-size:9px">+ Div RSI bajista confirmada</span>' : ''}
+        </div>`);
+    }
+
+    if (pats.W) {
+        const c = estadoColor[pats.W.estado] || '#00e676';
+        items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(0,230,118,.05);
+            border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+            <span style="color:${c};font-weight:700">W Doble suelo</span>
+            <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.W.estado]||''}</span><br>
+            <span style="color:rgba(255,255,255,.5)">V1: ${pats.W.v1_y?.toFixed(2)} · V2: ${pats.W.v2_y?.toFixed(2)}
+            · Neck: ${pats.W.neckline?.toFixed(2)}</span>${pats.W.rsi_div ?
+            '<br><span style="color:#00e676;font-size:9px">+ Div RSI alcista confirmada</span>' : ''}
+        </div>`);
+    }
+
+    if (pats.HCH) {
+        const c = estadoColor[pats.HCH.estado] || '#ff9800';
+        items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(255,23,68,.06);
+            border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+            <span style="color:${c};font-weight:700">HCH Bajista</span>
+            <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.HCH.estado]||''}</span><br>
+            <span style="color:rgba(255,255,255,.5)">CAB: ${pats.HCH.cab_y?.toFixed(2)}
+            · Neck: ${pats.HCH.nk2_y?.toFixed(2)}</span>
+        </div>`);
+    }
+
+    if (pats.HCH_inv) {
+        const c = estadoColor[pats.HCH_inv.estado] || '#00e676';
+        items.push(`<div style="padding:5px 8px;border-radius:4px;background:rgba(0,230,118,.05);
+            border-left:2px solid ${c};font-family:var(--fm);font-size:10px;line-height:1.5">
+            <span style="color:${c};font-weight:700">HCH Invertido Alcista</span>
+            <span style="float:right;font-size:8px;color:${c}">${estadoLabel[pats.HCH_inv.estado]||''}</span><br>
+            <span style="color:rgba(255,255,255,.5)">CAB: ${pats.HCH_inv.cab_y?.toFixed(2)}
+            · Neck: ${pats.HCH_inv.nk2_y?.toFixed(2)}</span>
+        </div>`);
+    }
+
+    if (divs.bear_div) items.push(`<div style="padding:4px 8px;border-radius:4px;
+        background:rgba(255,23,68,.06);border-left:2px solid #ff1744;
+        font-family:var(--fm);font-size:9px;color:rgba(255,23,68,.9)">
+        Div RSI bajista regular — precio HH · RSI LH</div>`);
+    if (divs.bull_div) items.push(`<div style="padding:4px 8px;border-radius:4px;
+        background:rgba(0,230,118,.05);border-left:2px solid #00e676;
+        font-family:var(--fm);font-size:9px;color:rgba(0,230,118,.9)">
+        Div RSI alcista regular — precio LL · RSI HL</div>`);
+    if (divs.hidden_bear) items.push(`<div style="padding:4px 8px;border-radius:4px;
+        background:rgba(255,152,0,.05);border-left:2px solid #ff9800;
+        font-family:var(--fm);font-size:9px;color:rgba(255,152,0,.9)">
+        Div RSI bajista oculta</div>`);
+    if (divs.hidden_bull) items.push(`<div style="padding:4px 8px;border-radius:4px;
+        background:rgba(0,200,255,.05);border-left:2px solid #00bcd4;
+        font-family:var(--fm);font-size:9px;color:rgba(0,200,255,.9)">
+        Div RSI alcista oculta</div>`);
+
+    if (items.length) {
+        document.getElementById('patSym').innerText = sym;
+        list.innerHTML = items.join('');
+        box.style.display = 'block';
+    } else {
+        box.style.display = 'none';
+    }
+}
+Y en loadSym() añade renderPatterns(data) justo después de renderFL(...).
+Con esto conseguirás ver en el gráfico las líneas del patrón formándose en naranja mientras se forma y en rojo/verde cuando se confirma, las líneas de divergencia en el RSI conectando los pivotes, y el panel lateral mostrando el estado exacto con los niveles de P2/V2/HD y la neckline. Las alertas en tiempo real llegan en cuanto el precio toca la zona del segundo punto.
