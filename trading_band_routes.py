@@ -17,20 +17,20 @@ router = APIRouter(prefix="/api/tradingband", tags=["TradingBand"])
 # ──────────────────────────────────────────────────────────
 TB_CONFIG = {
     # range_display: etiqueta visual (todos 1000). range_calc: valor real para build_range_bars.
-    "^DJI":    {"range": 1000, "range_calc": 1000,    "ema_s": 200, "ema_l": 800, "name": "US30 · Dow Jones"},
-    "^NDX":    {"range": 1000, "range_calc": 1000,    "ema_s": 200, "ema_l": 800, "name": "NAS100 · NASDAQ"},
-    "^GSPC":   {"range": 1000, "range_calc": 80,     "ema_s": 200, "ema_l": 800, "name": "SPX · S&P 500"},
-    "GC=F":    {"range": 1000, "range_calc": 15,     "ema_s": 200, "ema_l": 800, "name": "XAUUSD · Oro"},
-    "SI=F":    {"range": 1000, "range_calc": 0.15,   "ema_s": 200, "ema_l": 800, "name": "XAGUSD · Plata"},
-    "CL=F":    {"range": 1000, "range_calc": 0.5,    "ema_s": 200, "ema_l": 800, "name": "WTI · Petróleo"},
-    "USDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 200, "ema_l": 800, "name": "USD/JPY"},
-    "GBPJPY=X":{"range": 1000, "range_calc": 0.6,    "ema_s": 200, "ema_l": 800, "name": "GBP/JPY"},
-    "EURUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 200, "ema_l": 800, "name": "EUR/USD"},
-    "AUDUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 200, "ema_l": 800, "name": "AUD/USD"},
-    "BTC-USD": {"range": 1000, "range_calc": 250,    "ema_s": 200, "ema_l": 800, "name": "BTC · Bitcoin"},
-    "GBPUSD=X":{"range": 1000, "range_calc": 0.004,  "ema_s": 200, "ema_l": 800, "name": "GBP/USD"},
-    "AUDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 200, "ema_l": 800, "name": "AUD/JPY"},
-    "_default":{"range": 1000, "range_calc": 50,     "ema_s": 200, "ema_l": 800, "name": "Activo"},
+    "^DJI":    {"range": 1000, "range_calc": 1000,    "ema_s": 50, "ema_l": 200, "name": "US30 · Dow Jones"},
+    "^NDX":    {"range": 1000, "range_calc": 1000,    "ema_s": 50, "ema_l": 200, "name": "NAS100 · NASDAQ"},
+    "^GSPC":   {"range": 1000, "range_calc": 80,     "ema_s": 50, "ema_l": 200, "name": "SPX · S&P 500"},
+    "GC=F":    {"range": 1000, "range_calc": 15,     "ema_s": 50, "ema_l": 200, "name": "XAUUSD · Oro"},
+    "SI=F":    {"range": 1000, "range_calc": 0.15,   "ema_s": 50, "ema_l": 200, "name": "XAGUSD · Plata"},
+    "CL=F":    {"range": 1000, "range_calc": 0.5,    "ema_s": 50, "ema_l": 200, "name": "WTI · Petróleo"},
+    "USDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 50, "ema_l": 200, "name": "USD/JPY"},
+    "GBPJPY=X":{"range": 1000, "range_calc": 0.6,    "ema_s": 50, "ema_l": 200, "name": "GBP/JPY"},
+    "EURUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 50, "ema_l": 200, "name": "EUR/USD"},
+    "AUDUSD=X":{"range": 1000, "range_calc": 0.003,  "ema_s": 50, "ema_l": 200, "name": "AUD/USD"},
+    "BTC-USD": {"range": 1000, "range_calc": 250,    "ema_s": 50, "ema_l": 200, "name": "BTC · Bitcoin"},
+    "GBPUSD=X":{"range": 1000, "range_calc": 0.004,  "ema_s": 50, "ema_l": 200, "name": "GBP/USD"},
+    "AUDJPY=X":{"range": 1000, "range_calc": 0.4,    "ema_s": 50, "ema_l": 200, "name": "AUD/JPY"},
+    "_default":{"range": 1000, "range_calc": 50,     "ema_s": 50, "ema_l": 200, "name": "Activo"},
 }
 
 _yf_lock = asyncio.Lock()

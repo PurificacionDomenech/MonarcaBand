@@ -26,7 +26,7 @@ The app has been renamed from "The Matrix Lab" to **Trading Band**. Same structu
 
 ### What stayed the same
 - All assets (USDJPY, GBPJPY, EURUSD, AUDUSD, GC=F, SI=F, CL=F, ^DJI, ^NDX + **BTC-USD** + hidden extras)
-- EMA 200/800 on chart
+- EMA 50/200 on chart
 - Telegram + Email notification system
 - Scheduler (every 30 min + TB confluences cada 5 min + RSI real-time cada 2 min)
 - Supabase authentication (login opcional, dashboard funciona en modo anónimo)
@@ -37,7 +37,7 @@ The app has been renamed from "The Matrix Lab" to **Trading Band**. Same structu
 
 "Trading Band" is a web application that provides:
 - Real-time market data for stocks, indices, forex, commodities, and crypto via yfinance
-- Technical analysis: EMA 200/800, RSI 14 with divergences, MonarcaBand, Shark Fin exhaustion
+- Technical analysis: EMA 50/200, RSI 14 with divergences, MonarcaBand, Shark Fin exhaustion
 - Automatic alerts via Telegram and email
 - A scheduler that runs market checks every 30 min + TB confluences every 5 min + RSI real-time every 2 min
 - A Telegram bot integration for subscribing to alerts
@@ -94,7 +94,7 @@ The system evaluates up to 7 confluences with **directional validation**:
 | # | Confluence | Direction | Points |
 |---|---|---|---|
 | ① | RSI < 47 / > 53 | bullish (comprar barato) / bearish (vender caro) | 1 |
-| ② | EMA200 vs EMA800 | bullish (EMA200 > EMA800) / bearish | 1 |
+| ② | EMA50 vs EMA200 | bullish (EMA50 > EMA200) / bearish | 1 |
 | ③ | MonarcaBand touch | soporte → bullish / resistencia → bearish | 1 |
 | ④ | Day + Week open | both above → bullish / both below → bearish | 1 |
 | ⑤ | Fibonacci 55.9% | neutral (valid for both directions) | 1 |
