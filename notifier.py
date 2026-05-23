@@ -258,9 +258,9 @@ def _build_tg_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") ->
             if hora:
                 dia_es_str = dia_map.get(dia_name, dia_name)
                 if lang == "en":
-                    blocks.append(f"🕐 4H candle · {dia_es_str}  {hora} UTC")
+                    blocks.append(f"🕐 Range bar · {dia_es_str}  {hora} UTC")
                 else:
-                    blocks.append(f"🕐 Vela 4H · {dia_es_str}  {hora} UTC")
+                    blocks.append(f"🕐 Vela de rango · {dia_es_str}  {hora} UTC")
 
             # Precio actual
             if close_v is not None:
@@ -685,13 +685,13 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     if lang == "en":
         conf_label = f"{puntos}/{max_confs} confluences"
         sec_header = "<b>Active confluences:</b>"
-        candle_lbl = "4H candle"
+        candle_lbl = "Range bar"
         contr_warn = ("⚠️ <b>CONFLICTING SIGNALS</b> — confluences point in opposite directions. "
                       "No valid setup.") if contradiccion else ""
     else:
         conf_label = f"{puntos}/{max_confs} confluencias"
         sec_header = "<b>Confluencias activas:</b>"
-        candle_lbl = "Vela 4H"
+        candle_lbl = "Vela de rango"
         contr_warn = ("⚠️ <b>SEÑALES CONTRADICTORIAS</b> — las confluencias apuntan en direcciones "
                       "opuestas. Setup no válido.") if contradiccion else ""
 

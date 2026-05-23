@@ -325,8 +325,45 @@ async def async_download(ticker, **kwargs):
         return await loop.run_in_executor(None, lambda: yf.download(ticker, **kwargs))
 
 
+async def async_download_rb(ticker: str, label: str = "") -> tuple:
+    """Descarga datos de alta frecuencia (5m) y construye velas de rango.
+    Retorna (DataFrame con columnas Open/High/Low/Close/Volume, bar_type_label)."""
+    if _build_rb is None:
+        df = await async_download(ticker, period="6mo", interval="4h", progress=False)
+        return clean_df(df), "4h"
+
+    tb_cfg = _get_tb_cfg(ticker)
+    range_size = tb_cfg.get("range", 0)
+
+    if range_size <= 0:
+        df = await async_download(ticker, period="6mo", interval="4h", progress=False)
+        return clean_df(df), "4h"
+
+    df_raw = await async_download(ticker, period="60d", interval="5m", progress=False)
+    df = clean_df(df_raw)
+    if df.empty:
+        return df, "5m"
+
+    df.columns = [c.lower() for c in df.columns]
+    df_rb = _build_rb(df, range_size)
+    if df_rb is not None and not df_rb.empty and len(df_rb) < len(df):
+        df = df_rb.rename(columns={
+            "open": "Open", "high": "High", "low": "Low",
+            "close": "Close", "volume": "Volume"
+        })
+        return df, f"Rango {range_size}"
+    else:
+        df.columns = [c.capitalize() for c in df.columns]
+        return df, "5m"
+
+
 def get_cfg(t):
     return ASSET_CONFIG.get(t.upper(), ASSET_CONFIG["_default"])
+
+
+def _get_tb_cfg(t):
+    """Devuelve la config de TradingBand (range, ema_s, ema_l)."""
+    return _TB_CFG.get(t.upper(), _TB_CFG.get("_default", {})) if _TB_CFG else {}
 
 
 def clean_df(df):
@@ -1002,11 +1039,9 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
         try:
             cfg = _TB_CFG.get(t.upper(), _TB_CFG.get("_default"))
 
-            # 1h para precisión temporal (≤2h de antigüedad)
-            df = await async_download(t.upper(), period="3mo", interval="1h", progress=False)
+            df, bar_type = await async_download_rb(t.upper())
             if df.empty:
                 continue
-            df = clean_df(df)
             df_calc = df.copy()
             df_calc.columns = [c.lower() for c in df_calc.columns]
             df_calc = df_calc.dropna(subset=["close"])
@@ -1033,14 +1068,15 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                 if i < 1:
                     continue
 
-                # Filtro de antigüedad: candle <= 2h
+                # Filtro de antigüedad: vela de rango <= 12h (las velas de rango
+                # no tienen duración fija; pueden tardar horas en formarse)
                 ts = df_calc.index[i]
                 try:
                     ts_parsed = pd.Timestamp(ts)
                     if ts_parsed.tzinfo is None:
                         ts_parsed = ts_parsed.tz_localize("UTC")
                     age_h = (pd.Timestamp.now(tz="UTC") - ts_parsed).total_seconds() / 3600
-                    if age_h > 2:
+                    if age_h > 12:
                         continue
                 except Exception:
                     continue
@@ -1183,12 +1219,9 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
     for t in tickers:
         try:
             cfg = get_cfg(t)
-            df = await async_download(
-                t.upper(), period="6mo", interval="4h", progress=False
-            )
+            df, bar_type = await async_download_rb(t.upper())
             if df.empty:
                 continue
-            df = clean_df(df)
             df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
             opens_data = calc_opens(df)
 
@@ -1219,10 +1252,10 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                     dia_num    = -1
                     dia_name   = ""
 
-                # Filtro de frescura: ignorar velas 4h con >1h de antigüedad
+                # Filtro de frescura: ignorar velas de rango con >12h de antigüedad
                 try:
                     age_h = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 3600
-                    if age_h > 1:
+                    if age_h > 12:
                         continue
                 except Exception:
                     pass
@@ -1345,7 +1378,7 @@ async def scheduled_watch():
 
 
 async def daily_catchup():
-    """Catch-up al arrancar: revisa SOLO la última vela (≤4h) — nada de más de 1h atrás."""
+    """Catch-up al arrancar: revisa SOLO la última vela de rango (≤12h) — nada muy antiguo."""
     if not HAS_NOTIFIER:
         return
 
@@ -1354,7 +1387,7 @@ async def daily_catchup():
         catchup_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
         print("[catchup] Fin de semana — revisando solo BTC-USD")
 
-    # 1) Confluencias TradingBand (siempre frescas ≤2h)
+    # 1) Confluencias TradingBand (siempre frescas ≤12h)
     tb_alerts = await _check_tb_confluences(catchup_tickers, label="catchup")
     if tb_alerts:
         tb_alerts = _apply_weekend_filter(_filter_expired_alerts(tb_alerts))
@@ -1364,7 +1397,7 @@ async def daily_catchup():
         await notify_users_with_alerts(tb_alerts)
 
     # 2) Alertas clásicas
-    print("[catchup] Revisando vela actual (máx 1h de antigüedad)…")
+    print("[catchup] Revisando vela de rango actual (máx 12h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
         catchup_tickers, num_candles=1, label="catchup", max_per_ticker=1
     )
@@ -1388,10 +1421,9 @@ async def _update_rsi_watchlist():
     for t in WATCH_TICKERS:
         try:
             cfg = get_cfg(t)
-            df = await async_download(t.upper(), period="6mo", interval="4h", progress=False)
+            df, bar_type = await async_download_rb(t.upper())
             if df.empty:
                 continue
-            df = clean_df(df)
             df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
             opens_data = calc_opens(df)
 
@@ -1457,10 +1489,9 @@ async def _rsi_realtime_check():
 
     for ticker, info in list(_rsi_watchlist.items()):
         try:
-            df = await async_download(ticker, period="5d", interval="15m", progress=False)
+            df, bar_type = await async_download_rb(ticker)
             if df.empty:
                 continue
-            df = clean_df(df)
 
             col_rsi = "RSI"
             if col_rsi not in df.columns:
@@ -1488,9 +1519,9 @@ async def _rsi_realtime_check():
             # ─── Detección inmediata de Aleta Tiburón (Shark Fin) ───
             shark = None
             if _calc_shark_fin is not None:
-                df_shark = await async_download(ticker, period="6mo", interval="4h", progress=False)
+                df_shark, _ = await async_download_rb(ticker)
                 if not df_shark.empty:
-                    shark = _calc_shark_fin(clean_df(df_shark))
+                    shark = _calc_shark_fin(df_shark)
                     if shark.get("alert_immediate") and shark.get("phase") in ("exceeded", "crossed"):
                         tipo  = shark["shark_tipo"]
                         phase = shark["phase"]
@@ -1526,15 +1557,14 @@ async def _rsi_realtime_check():
                             _sent_cache[dedup_key] = now
                             print(f"[shark] {emoji} {ticker} — {phase} RSI={shark['shark_rsi_peak']:.1f}")
 
-            df_4h = await async_download(ticker, period="6mo", interval="4h", progress=False)
-            if df_4h.empty:
+            df_rb, _ = await async_download_rb(ticker)
+            if df_rb.empty:
                 continue
-            df_4h = clean_df(df_4h)
-            df_4h = calc_indicators(df_4h, cfg["ema_short"], cfg["ema_long"])
-            opens_data = calc_opens(df_4h)
+            df_rb = calc_indicators(df_rb, cfg["ema_short"], cfg["ema_long"])
+            opens_data = calc_opens(df_rb)
 
             components_ctx = info.get("components_ctx")
-            resultado = evaluate_confluencias(df_4h, ticker=ticker, cfg=cfg,
+            resultado = evaluate_confluencias(df_rb, ticker=ticker, cfg=cfg,
                                               opens=opens_data, components_ctx=components_ctx)
 
             if not resultado:
@@ -2047,10 +2077,9 @@ async def _compute_row(ticker: str) -> dict:
         return cached["data"]
     cfg = get_cfg(ticker)
     es, el = cfg["ema_short"], cfg["ema_long"]
-    df = await async_download(key, period="1y", interval="4h", progress=False)
+    df, bar_type = await async_download_rb(key)
     if df.empty:
         return {"error": "not found"}
-    df = clean_df(df)
     df = calc_indicators(df, es, el)
     df = calc_trading_band(df)
     last, first = float(df["Close"].iloc[-1]), float(df["Close"].iloc[0])
@@ -2186,11 +2215,8 @@ async def watch(tickers: str = ""):
             continue
         try:
             cfg = get_cfg(t)
-            df = await async_download(
-                t.upper(), period="6mo", interval="4h", progress=False
-            )
+            df, bar_type = await async_download_rb(t.upper())
             if not df.empty:
-                df = clean_df(df)
                 df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
                 all_alertas.extend(
                     detect_alerts(
