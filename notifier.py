@@ -1,5 +1,5 @@
 """
-notifier.py — The Matrix Lab
+notifier.py — Trading Band
 Cada usuario tiene sus propios tickers vigilados y canales de notificación.
 
 Variables de entorno en Railway:
@@ -14,6 +14,7 @@ Variables de entorno en Railway:
 
 import os
 import re
+import html
 import asyncio
 import smtplib
 import logging
@@ -224,7 +225,7 @@ def _signal_lines(a: dict, lang: str) -> list[str]:
 def _build_tg_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") -> str:
     labels  = NIVEL_LABEL_EN if lang == "en" else NIVEL_LABEL
     dia_map = _DIA_EN if lang == "en" else _DIA_ES
-    blocks  = [f"<b>⬡ Matrix Lab · {now_str}</b>"]
+    blocks  = [f"<b>⬡ Trading Band · {now_str}</b>"]
 
     for ticker, alertas in alerts_by_ticker.items():
         if not alertas:
@@ -349,7 +350,7 @@ def _build_html_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") 
     return f"""<html><body style="background:#000;padding:20px;">
       <div style="max-width:600px;margin:auto;background:#010801;border:1px solid #00ff4120;border-radius:8px;overflow:hidden;">
         <div style="background:#010f01;padding:14px 20px;border-bottom:1px solid #00ff4115;">
-          <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">⬡ THE MATRIX LAB</span>
+          <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">⬡ TRADING BAND</span>
           <span style="font-family:monospace;font-size:11px;color:#666;margin-left:10px;">{now_str}</span>
         </div>
         <table style="width:100%;border-collapse:collapse;">{rows}{risk_row}</table>
@@ -537,7 +538,7 @@ def _build_html(alertas: list[dict], now_str: str) -> str:
     return f"""<html><body style="background:#000;padding:20px;">
       <div style="max-width:600px;margin:auto;background:#010801;border:1px solid #00ff4120;border-radius:8px;overflow:hidden;">
         <div style="background:#010f01;padding:14px 20px;border-bottom:1px solid #00ff4115;">
-          <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">⬡ THE MATRIX LAB</span>
+          <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">⬡ TRADING BAND</span>
           <span style="font-family:monospace;font-size:11px;color:#666;margin-left:10px;">{now_str}</span>
         </div>
         <table style="width:100%;border-collapse:collapse;">{filas}</table>
@@ -704,7 +705,7 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
             rt_banner = "⚡ <b>ALERTA RSI EN TIEMPO REAL</b> — ¡El RSI acaba de entrar en zona extrema!"
 
     lines = [
-        f"<b>⬡ MATRIX LAB · {now_str}</b>",
+        f"<b>⬡ TRADING BAND · {now_str}</b>",
     ]
     if rt_banner:
         lines.append(rt_banner)
@@ -745,7 +746,8 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
         else:
             icon = "◻️"
 
-        lines.append(f"{icon} {c['texto']}")
+        texto_escapado = html.escape(c['texto'], quote=False)
+        lines.append(f"{icon} {texto_escapado}")
 
     # ── Bloque especial Aleta Tiburón ──
     shark_conf = next((c for c in confs if c.get("id") == 7 and c.get("ok")), None)
@@ -796,7 +798,7 @@ def _build_tg_for_user(alerts_by_ticker: dict, now_str: str, lang: str = "es",
         for a in al
     )
     if has_resultado:
-        blocks = [f"<b>⬡ Matrix Lab · {now_str}</b>"]
+        blocks = [f"<b>⬡ Trading Band · {now_str}</b>"]
         for ticker, alertas in alerts_by_ticker.items():
             for a in alertas:
                 res = a.get("resultado")
@@ -892,7 +894,7 @@ async def notify_users_with_alerts(alerts_by_ticker: dict) -> None:
                 html = _build_html_grouped(user_by_ticker, now_str, lang=lang)
                 await loop.run_in_executor(
                     None, _smtp_send, prefs["email_address"],
-                    f"⬡ Matrix Lab · {now_str}", html
+                    f"⬡ Trading Band · {now_str}", html
                 )
 
     # 2 — Suscriptores básicos de Telegram (/start) sin preferencias configuradas

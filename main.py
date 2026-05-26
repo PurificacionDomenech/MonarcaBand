@@ -995,7 +995,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     elif puntos == 3:
         estado = "INTERESANTE"
         nivel  = direction
-        alert  = False
+        alert  = True
     elif puntos == 2:
         estado = "CONSIDERAR"
         nivel  = "info"
@@ -1051,6 +1051,22 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
             df, bar_type = await async_download_rb(t.upper())
             if df.empty:
                 continue
+
+            # ─── INYECTAR PRECIO ACTUAL ───
+            live_price = await _get_current_price(t.upper())
+            if live_price and not df.empty:
+                last_close = float(df["Close"].iloc[-1])
+                if abs(live_price - last_close) / last_close > 0.0005:
+                    new_idx = pd.Timestamp.now(tz="UTC")
+                    ghost = pd.DataFrame({
+                        "Open": [live_price], "High": [max(live_price, last_close)],
+                        "Low":  [min(live_price, last_close)], "Close": [live_price],
+                        "Volume": [0.0],
+                    }, index=[new_idx])
+                    df = pd.concat([df, ghost])
+                    df.sort_index(inplace=True)
+            # ─── FIN INYECCIÓN ───
+
             df_calc = df.copy()
             df_calc.columns = [c.lower() for c in df_calc.columns]
             df_calc = df_calc.dropna(subset=["close"])
@@ -1077,15 +1093,18 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                 if i < 1:
                     continue
 
-                # Filtro de antigüedad: vela de rango <= 12h (las velas de rango
-                # no tienen duración fija; pueden tardar horas en formarse)
+                # Filtro de antigüedad: velas de rango <= 12h,
+                # pero si hay precio inyectado (fila fantasma <=15m) permitirla
                 ts = df_calc.index[i]
                 try:
                     ts_parsed = pd.Timestamp(ts)
                     if ts_parsed.tzinfo is None:
                         ts_parsed = ts_parsed.tz_localize("UTC")
-                    age_h = (pd.Timestamp.now(tz="UTC") - ts_parsed).total_seconds() / 3600
-                    if age_h > 12:
+                    age_min = (pd.Timestamp.now(tz="UTC") - ts_parsed).total_seconds() / 60
+                    # Fantasma (injectada viva): <= 15 min permitida siempre
+                    # Velas reales: <= 12h
+                    max_age_min = 15 if age_min < 20 else 12 * 60
+                    if age_min > max_age_min:
                         continue
                 except Exception:
                     continue
@@ -1231,6 +1250,22 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
             df, bar_type = await async_download_rb(t.upper())
             if df.empty:
                 continue
+
+            # ─── INYECTAR PRECIO ACTUAL ───
+            live_price = await _get_current_price(t.upper())
+            if live_price and not df.empty:
+                last_close = float(df["Close"].iloc[-1])
+                if abs(live_price - last_close) / last_close > 0.0005:
+                    new_idx = pd.Timestamp.now(tz="UTC")
+                    ghost = pd.DataFrame({
+                        "Open": [live_price], "High": [max(live_price, last_close)],
+                        "Low":  [min(live_price, last_close)], "Close": [live_price],
+                        "Volume": [0.0],
+                    }, index=[new_idx])
+                    df = pd.concat([df, ghost])
+                    df.sort_index(inplace=True)
+            # ─── FIN INYECCIÓN ───
+
             df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
             opens_data = calc_opens(df)
 
@@ -1261,10 +1296,11 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                     dia_num    = -1
                     dia_name   = ""
 
-                # Filtro de frescura: ignorar velas de rango con >12h de antigüedad
+                # Filtro de frescura: fantasma <=15min permitida, velas reales <=12h
                 try:
-                    age_h = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 3600
-                    if age_h > 12:
+                    age_min = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 60
+                    max_age_min = 15 if age_min < 20 else 12 * 60
+                    if age_min > max_age_min:
                         continue
                 except Exception:
                     pass
@@ -1433,6 +1469,22 @@ async def _update_rsi_watchlist():
             df, bar_type = await async_download_rb(t.upper())
             if df.empty:
                 continue
+
+            # ─── INYECTAR PRECIO ACTUAL ───
+            live_price = await _get_current_price(t.upper())
+            if live_price and not df.empty:
+                last_close = float(df["Close"].iloc[-1])
+                if abs(live_price - last_close) / last_close > 0.0005:
+                    new_idx = pd.Timestamp.now(tz="UTC")
+                    ghost = pd.DataFrame({
+                        "Open": [live_price], "High": [max(live_price, last_close)],
+                        "Low":  [min(live_price, last_close)], "Close": [live_price],
+                        "Volume": [0.0],
+                    }, index=[new_idx])
+                    df = pd.concat([df, ghost])
+                    df.sort_index(inplace=True)
+            # ─── FIN INYECCIÓN ───
+
             df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
             opens_data = calc_opens(df)
 
@@ -1501,6 +1553,21 @@ async def _rsi_realtime_check():
             df, bar_type = await async_download_rb(ticker)
             if df.empty:
                 continue
+
+            # ─── INYECTAR PRECIO ACTUAL ───
+            live_price = await _get_current_price(ticker)
+            if live_price and not df.empty:
+                last_close = float(df["Close"].iloc[-1])
+                if abs(live_price - last_close) / last_close > 0.0005:
+                    new_idx = pd.Timestamp.now(tz="UTC")
+                    ghost = pd.DataFrame({
+                        "Open": [live_price], "High": [max(live_price, last_close)],
+                        "Low":  [min(live_price, last_close)], "Close": [live_price],
+                        "Volume": [0.0],
+                    }, index=[new_idx])
+                    df = pd.concat([df, ghost])
+                    df.sort_index(inplace=True)
+            # ─── FIN INYECCIÓN ───
 
             col_rsi = "RSI"
             if col_rsi not in df.columns:
@@ -1652,7 +1719,7 @@ if HAS_SCHEDULER:
                 print(f"[telegram] register_chat → {'OK' if ok else 'FALLO'}")
                 sent = await send_telegram_to(
                     chat_id,
-                    f"✅ <b>¡Suscrito a The Matrix Lab!</b>\n\n"
+                    f"✅ <b>¡Suscrito a Trading Band!</b>\n\n"
                     f"⬡ Recibirás alertas automáticas cada 4H de tus activos favoritos.\n\n"
                     f"📋 <b>Tu Chat ID es:</b> <code>{chat_id}</code>\n"
                     f"Cópialo y pégalo en el panel de Notificaciones de la app para personalizar tus alertas.\n\n"
@@ -1670,7 +1737,7 @@ if HAS_SCHEDULER:
                 )
             elif text.startswith("/status"):
                 await send_telegram_to(
-                    chat_id, "✅ <b>The Matrix Lab activo</b>\nRevisión cada 4 horas."
+                    chat_id, "✅ <b>Trading Band activo</b>\nRevisión cada 30 min + RSI cada 2 min."
                 )
             elif text.startswith("/test"):
                 await send_telegram_to(
@@ -2268,6 +2335,20 @@ async def watch(tickers: str = ""):
             cfg = get_cfg(t)
             df, bar_type = await async_download_rb(t.upper())
             if not df.empty:
+                # ─── INYECTAR PRECIO ACTUAL ───
+                live_price = await _get_current_price(t.upper())
+                if live_price and not df.empty:
+                    last_close = float(df["Close"].iloc[-1])
+                    if abs(live_price - last_close) / last_close > 0.0005:
+                        new_idx = pd.Timestamp.now(tz="UTC")
+                        ghost = pd.DataFrame({
+                            "Open": [live_price], "High": [max(live_price, last_close)],
+                            "Low":  [min(live_price, last_close)], "Close": [live_price],
+                            "Volume": [0.0],
+                        }, index=[new_idx])
+                        df = pd.concat([df, ghost])
+                        df.sort_index(inplace=True)
+                # ─── FIN INYECCIÓN ───
                 df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
                 all_alertas.extend(
                     detect_alerts(
