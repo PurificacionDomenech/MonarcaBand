@@ -15,6 +15,7 @@ Variables de entorno en Railway:
 import os
 import re
 import html
+import json
 import asyncio
 import smtplib
 import logging
@@ -23,6 +24,26 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import httpx
+
+# Cache persistente en disco para chat_ids (fallback cuando Supabase falla)
+_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+os.makedirs(_CACHE_DIR, exist_ok=True)
+_CHAT_IDS_CACHE_FILE = os.path.join(_CACHE_DIR, "telegram_chat_ids.json")
+
+def _load_cached_chat_ids() -> list[int]:
+    try:
+        with open(_CHAT_IDS_CACHE_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("chat_ids", [])
+    except Exception:
+        return []
+
+def _save_cached_chat_ids(chat_ids: list[int]) -> None:
+    try:
+        with open(_CHAT_IDS_CACHE_FILE, "w") as f:
+            json.dump({"chat_ids": chat_ids, "updated_at": datetime.now().isoformat()}, f)
+    except Exception as e:
+        print(f"[notifier] Cache save error: {e}")
 
 logger = logging.getLogger("notifier")
 
@@ -429,15 +450,28 @@ async def _supa_patch(path: str, payload: dict) -> bool:
 
 async def get_chat_ids() -> list[int]:
     rows = await _supa_get("telegram_subs?select=chat_id")
-    return [r["chat_id"] for r in rows if r.get("chat_id")]
+    chat_ids = [r["chat_id"] for r in rows if r.get("chat_id")]
+    if chat_ids:
+        _save_cached_chat_ids(chat_ids)
+    if not chat_ids:
+        chat_ids = _load_cached_chat_ids()
+        if chat_ids:
+            print(f"[notifier] Fallback: {len(chat_ids)} chat_ids desde cache local")
+    return chat_ids
 
 
 async def register_chat(chat_id: int, username: str = "") -> bool:
-    return await _supa_post(
+    ok = await _supa_post(
         "telegram_subs",
         {"chat_id": chat_id, "username": username or ""},
         prefer="resolution=merge-duplicates"
     )
+    if ok:
+        existing = _load_cached_chat_ids()
+        if chat_id not in existing:
+            existing.append(chat_id)
+            _save_cached_chat_ids(existing)
+    return ok
 
 
 # ── Preferencias por usuario ─────────────────────────────────
