@@ -83,14 +83,17 @@ WATCH_TICKERS = [
 ]
 
 _sent_cache: dict = {}
-_DEDUP_SECONDS = 1 * 3600  # 1 hora máximo para alertas recientes
+_DEDUP_SECONDS = 4 * 3600  # 4 horas máximo para alertas recientes
 
 _row_cache: dict = {}
 _ROW_TTL = 60
 _yf_lock = asyncio.Lock()
 
 _rsi_watchlist: dict = {}
-_RSI_WATCH_INTERVAL_MIN = 2
+_RSI_WATCH_INTERVAL_MIN = 15
+
+# Cache para evitar re-alerta de Shark Fin en la misma fase
+_shark_phase_cache: dict = {}  # ticker -> {"tipo": str, "phase": str, "ts": float}
 
 ASSET_CONFIG = {
     "^DJI": {
@@ -1604,8 +1607,10 @@ async def _rsi_realtime_check():
                     if shark.get("alert_immediate") and shark.get("phase") in ("exceeded", "crossed"):
                         tipo  = shark["shark_tipo"]
                         phase = shark["phase"]
-                        dedup_key = f"SHARK_{ticker}_{tipo}_{phase}"
-                        if now - _sent_cache.get(dedup_key, 0) >= _DEDUP_SECONDS:
+                        # ── Solo alertar si la fase CAMBIÓ vs la anterior ──
+                        prev = _shark_phase_cache.get(ticker)
+                        phase_changed = (prev is None) or (prev.get("tipo") != tipo) or (prev.get("phase") != phase)
+                        if phase_changed:
                             if phase == "exceeded":
                                 emoji = "⚡🦈"
                                 msg_txt = (f"[{ticker}] {emoji} ALETA TIBURÓN EXTREMA\n"
@@ -1633,8 +1638,8 @@ async def _rsi_realtime_check():
                                 "shark_data":   shark,
                                 "pts_label":    pts_label,
                             })
-                            _sent_cache[dedup_key] = now
-                            print(f"[shark] {emoji} {ticker} — {phase} RSI={shark['shark_rsi_peak']:.1f}")
+                            _shark_phase_cache[ticker] = {"tipo": tipo, "phase": phase, "ts": now}
+                            print(f"[shark] {emoji} {ticker} — {phase} (nuevo) RSI={shark['shark_rsi_peak']:.1f}")
 
             df_rb, _ = await async_download_rb(ticker)
             if df_rb.empty:
@@ -1655,13 +1660,13 @@ async def _rsi_realtime_check():
                     if direction == "bullish" and rsi_now <= 30:
                         c["ok"] = True
                         c["tipo"] = "bullish"
-                        c["texto"] = f"⚡ RSI en zona ({rsi_now:.1f}) → COMPRA"
+                        c["texto"] = f"⚡ RSI en zona de compra ({rsi_now:.1f}) → COMPRA"
                         c.pop("descartada", None)
                         c.pop("conflicto", None)
                     elif direction == "bearish" and rsi_now >= 70:
                         c["ok"] = True
                         c["tipo"] = "bearish"
-                        c["texto"] = f"⚡ RSI en zona ({rsi_now:.1f}) → VENTA"
+                        c["texto"] = f"⚡ RSI en zona de venta ({rsi_now:.1f}) → VENTA"
                         c.pop("descartada", None)
                         c.pop("conflicto", None)
 
@@ -1670,7 +1675,7 @@ async def _rsi_realtime_check():
             resultado["puntos"] = puntos
             resultado["estado"] = "FAVORABLE" if puntos >= 4 else "INTERESANTE"
             resultado["nivel"] = direction
-            resultado["alert"] = puntos >= 4
+            resultado["alert"] = puntos >= 3
             resultado["rsi_realtime"] = True
 
             if resultado["alert"]:
@@ -1805,7 +1810,7 @@ if HAS_SCHEDULER:
             async def _tb_confl_job():
                 await _check_tb_confluences(WATCH_TICKERS)
             scheduler.add_job(_tb_confl_job,
-                              "interval", minutes=5, id="tb_confl_5m")
+                              "interval", minutes=30, id="tb_confl_30m")
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
