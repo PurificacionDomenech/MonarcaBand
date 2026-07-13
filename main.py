@@ -24,6 +24,7 @@ try:
         detect_fvg as _detect_fvg,
         detect_all_divergences as _detect_all_divergences,
         calc_rsi as _calc_rsi,
+        build_rsi_div_segments as _build_rsi_div_segs,
     )
     HAS_TB = True
 except Exception as _tb_err:
@@ -39,6 +40,7 @@ except Exception as _tb_err:
     _detect_fvg = None
     _detect_all_divergences = None
     _calc_rsi = None
+    _build_rsi_div_segs = None
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -2180,6 +2182,18 @@ async def get_chart(ticker: str):
             for z in fvg_zonas
         ]
 
+        # Divergencias RSI para el chart (segmentos x1/y1→x2/y2 en espacio RSI)
+        rsi_divs = []
+        try:
+            if _detect_divs is not None and _calc_rsi is not None and _build_rsi_div_segs is not None:
+                rsi_div_series = _calc_rsi(df["Close"])
+                all_divs = _detect_divs(df, rsi_div_series)
+                recent_divs = [d for d in all_divs if d.get("bar", 0) >= start_i]
+                times = list(df.index)
+                rsi_divs = _build_rsi_div_segs(recent_divs, rsi_div_series, times)
+        except Exception as _de:
+            print(f"[chart] div segments error: {_de}")
+
         return {
             "chart": {
                 "candles": candles,
@@ -2191,6 +2205,7 @@ async def get_chart(ticker: str):
                 "tb_average": tb_avg,
                 "tb_crosses": crosses,
                 "fvg": fvg_chart,
+                "rsi_divs": rsi_divs,
             },
             "tb_last": {
                 "trigger": last_trig,
@@ -2354,6 +2369,11 @@ async def _compute_row(ticker: str) -> dict:
     except Exception as _pe:
         pass
 
+    # Divergencia RSI para columna de tabla
+    div_conf = next((c for c in (confl.get("confluencias", []) if confl else []) if c.get("id") == 2), None)
+    div_estado = div_conf.get("texto") if (div_conf and div_conf.get("ok")) else None
+    div_tipo   = div_conf.get("tipo")  if (div_conf and div_conf.get("ok")) else None
+
     result = {
         "ticker": key,
         "price": last,
@@ -2371,6 +2391,8 @@ async def _compute_row(ticker: str) -> dict:
         "shark_tipo": shark_tipo,
         "pat_estado": pat_estado,
         "pat_tipo": pat_tipo,
+        "div_estado": div_estado,
+        "div_tipo": div_tipo,
         "confluencias_puntos": confl["puntos"] if confl else 0,
         "confluencias_estado": confl["estado"] if confl else "NO AHORA",
         "confluencias": confl["confluencias"] if confl else [],

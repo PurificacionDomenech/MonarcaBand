@@ -409,7 +409,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <thead>
             <tr>
               <th>★ ACTIVO</th><th class="r">PRECIO</th><th class="r">CAMBIO %</th>
-              <th class="c">RSI 14</th><th class="c">🦈 SHARK · 🕯️ PATRÓN</th><th class="c">VACÍOS FVG</th><th class="c">ESTADO</th>
+              <th class="c">RSI 14</th><th class="c">📈 DIV RSI</th><th class="c">🦈 SHARK · 🕯️ PATRÓN</th><th class="c">VACÍOS FVG</th><th class="c">ESTADO</th>
             </tr>
           </thead>
           <tbody id="tb"></tbody>
@@ -561,7 +561,7 @@ function buildGrid(){
   sorted.forEach(a=>{
     const id=fid(a.t),isW=wl.has(a.t);
     const sec=isW?'★ Favoritos':a.g||'';
-    if(sec!==lg){lg=sec;const s=document.createElement('tr');s.className='grp';s.innerHTML=`<td colspan="7">${sec}</td>`;tb.appendChild(s)}
+    if(sec!==lg){lg=sec;const s=document.createElement('tr');s.className='grp';s.innerHTML=`<td colspan="8">${sec}</td>`;tb.appendChild(s)}
     const tr=document.createElement('tr');
     tr.id='fc-'+id;tr.className='ar';
     tr.onclick=e=>{if(e.target.closest('.star'))return;loadSym(a.t)};
@@ -577,6 +577,7 @@ function buildGrid(){
       <td style="text-align:right"><span id="tp-${id}" style="font-family:var(--fm);font-size:11px;color:#fff">—</span></td>
       <td style="text-align:right"><span id="tc-${id}" style="font-family:var(--fm);font-size:11px;color:var(--muted)">—</span></td>
       <td style="text-align:center"><span id="tr-${id}" style="font-family:var(--fm);font-size:10px;padding:2px 6px;border-radius:3px;background:var(--gdim);color:rgba(0,255,65,.35)">—</span></td>
+      <td style="text-align:center;min-width:70px" id="tdiv-${id}"><span class="ftag none">—</span></td>
       <td style="text-align:center;min-width:80px" id="tsh-${id}">—</td>
       <td style="text-align:center" id="tcr-${id}">—</td>
       <td style="text-align:center" id="tes-${id}">—</td>`;
@@ -653,6 +654,21 @@ async function loadRow(t){
       if(d.rsi<30){re.style.background='rgba(0,255,65,.12)';re.style.color='#00ff41'}
       else if(d.rsi>70){re.style.background='rgba(255,0,51,.1)';re.style.color='#ff4455'}
       else{re.style.background='rgba(0,255,65,.05)';re.style.color='rgba(0,255,65,.4)'}
+    }
+    // Columna DIV RSI
+    const divE=document.getElementById(`tdiv-${id}`);
+    if(divE){
+      if(d.div_estado){
+        const isBull=d.div_tipo==='bullish';
+        const col=isBull?'#00e676':'#ff1744';
+        const arrow=isBull?'▲':'▼';
+        // Extraer nivel y tipo de texto "Divergencia RSI BULL N1 (RSI 28.5)"
+        const m=d.div_estado.match(/(\w+)\s+N(\d)/i);
+        const lbl=m?`${arrow} ${m[1]} N${m[2]}`:`${arrow} DIV`;
+        divE.innerHTML=`<span style="font-family:var(--fm);font-size:9px;font-weight:700;color:${col};letter-spacing:.04em;white-space:nowrap">${lbl}</span>`;
+      }else{
+        divE.innerHTML='<span class="ftag none">—</span>';
+      }
     }
     // Columna VACÍOS FVG (reemplaza EMAs+CRUCE+BANDA)
     const cr=document.getElementById(`tcr-${id}`);
@@ -1168,14 +1184,32 @@ function renderRSI(cd,dates,xU){
   const dx=[],dy=[];
   dates.forEach((d,i)=>{const v=rv[i];if(v==null)return;dx.push(d);dy.push(v)});
   const d0=dates[0]||new Date(),dN=dates[dates.length-1]||new Date();
-  Plotly.react('rsiDiv',[
+  const rsiTraces=[
     {x:dx,y:dy.map(v=>v<30?v:null),type:'scatter',mode:'lines',showlegend:false,hoverinfo:'skip',fill:'tozeroy',fillcolor:'rgba(0,255,65,.1)',line:{color:'transparent',width:0}},
     {x:dx,y:dy.map(v=>v>70?v:null),type:'scatter',mode:'lines',showlegend:false,hoverinfo:'skip',fill:'toself',fillcolor:'rgba(255,0,51,.08)',line:{color:'transparent',width:0}},
     {x:dx,y:dy,type:'scatter',mode:'lines',name:'RSI 14',line:{color:'rgba(0,200,65,.85)',width:1.5},hovertemplate:'<b>RSI</b>: %{y:.1f}<extra></extra>'},
     {x:[d0,dN],y:[30,30],type:'scatter',mode:'lines',showlegend:false,hoverinfo:'skip',line:{color:'rgba(0,255,65,.4)',width:1,dash:'dot'}},
     {x:[d0,dN],y:[70,70],type:'scatter',mode:'lines',showlegend:false,hoverinfo:'skip',line:{color:'rgba(255,0,51,.4)',width:1,dash:'dot'}},
     {x:[d0,dN],y:[50,50],type:'scatter',mode:'lines',showlegend:false,hoverinfo:'skip',line:{color:'rgba(0,255,65,.06)',width:1,dash:'dot'}},
-  ],{paper_bgcolor:'#000',plot_bgcolor:'rgba(0,3,0,.4)',margin:{t:6,r:70,b:36,l:50},showlegend:false,xaxis:{type:'date',gridcolor:'rgba(0,255,65,.03)',linecolor:'rgba(0,255,65,.05)',tickfont:{color:'rgba(0,255,65,.25)',size:9,family:'Share Tech Mono'},rangeslider:{visible:false},...(xU?{range:xU}:{})},yaxis:{range:[0,100],gridcolor:'rgba(0,255,65,.03)',tickfont:{color:'rgba(0,255,65,.2)',size:8,family:'Share Tech Mono'},side:'right',tickvals:[0,30,50,70,100]},shapes:[{type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:0,y1:30,fillcolor:'rgba(0,255,65,.03)',line:{width:0}},{type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:70,y1:100,fillcolor:'rgba(255,0,51,.03)',line:{width:0}}],font:{family:'Share Tech Mono,monospace'},dragmode:'pan'},{responsive:true,scrollZoom:false,displayModeBar:false});
+  ];
+  // ── Líneas de divergencia RSI ─────────────────────────
+  const rsiDivs=cd.rsi_divs||[];
+  rsiDivs.forEach(dv=>{
+    const isBull=dv.type==='bull'||dv.type==='hbull';
+    const isHidden=dv.type==='hbull'||dv.type==='hbear';
+    const col=isBull?'rgba(0,230,118,.85)':'rgba(255,23,68,.85)';
+    const lbl=`${isHidden?'H-':''}${isBull?'▲':'▼'} N${dv.level}`;
+    rsiTraces.push({
+      x:[new Date(dv.x1),new Date(dv.x2)],
+      y:[dv.y1,dv.y2],
+      type:'scatter',mode:'lines+markers',
+      showlegend:false,
+      line:{color:col,width:dv.in_zone?2.5:1.5,dash:isHidden?'dash':'solid'},
+      marker:{color:col,size:[7,9],symbol:isBull?['triangle-up','triangle-up']:['triangle-down','triangle-down']},
+      hovertemplate:`<b>${lbl}</b>  RSI: %{y:.1f}<extra></extra>`,
+    });
+  });
+  Plotly.react('rsiDiv',rsiTraces,{paper_bgcolor:'#000',plot_bgcolor:'rgba(0,3,0,.4)',margin:{t:6,r:70,b:36,l:50},showlegend:false,xaxis:{type:'date',gridcolor:'rgba(0,255,65,.03)',linecolor:'rgba(0,255,65,.05)',tickfont:{color:'rgba(0,255,65,.25)',size:9,family:'Share Tech Mono'},rangeslider:{visible:false},...(xU?{range:xU}:{})},yaxis:{range:[0,100],gridcolor:'rgba(0,255,65,.03)',tickfont:{color:'rgba(0,255,65,.2)',size:8,family:'Share Tech Mono'},side:'right',tickvals:[0,30,50,70,100]},shapes:[{type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:0,y1:30,fillcolor:'rgba(0,255,65,.03)',line:{width:0}},{type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:70,y1:100,fillcolor:'rgba(255,0,51,.03)',line:{width:0}}],font:{family:'Share Tech Mono,monospace'},dragmode:'pan'},{responsive:true,scrollZoom:false,displayModeBar:false});
 }
 
 function tInd(k){
