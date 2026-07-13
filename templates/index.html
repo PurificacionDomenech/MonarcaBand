@@ -928,17 +928,154 @@ function renderP(apiData){
   if(typeof Plotly==='undefined'){pd.innerHTML='<div style="color:#0f0;padding:20px">Plotly not loaded</div>';return;}
   const cd=apiData.chart;
   if(!cd||!cd.candles||!cd.candles.length){pd.innerHTML='<div style="color:#f55;padding:20px">No candles</div>';return;}
-  pd.innerHTML='';
   const dates=cd.candles.map(c=>new Date(c.x));
   const closes=cd.candles.map(c=>c.c);
   const last=closes[closes.length-1]||1;
   const yFmt=last>500?',.0f':last>1?',.2f':',.4f';
-  const traces=[{x:dates,y:closes,type:'scatter',mode:'lines',name:'Precio 1H',line:{color:'#00ff41',width:2}}];
-  const layout={autosize:true,paper_bgcolor:'#050a05',plot_bgcolor:'#0a150a',margin:{t:10,r:70,b:50,l:50},hovermode:'x unified',showlegend:false,xaxis:{type:'date',gridcolor:'rgba(0,255,65,.15)',tickfont:{color:'#00ff41',size:9,family:'Share Tech Mono'}},yaxis:{side:'right',tickformat:yFmt,tickfont:{color:'#00ff41',size:9,family:'Share Tech Mono'}}};  
+  const traces=[],shapes=[];
+
+  // ── Precio principal ─────────────────────────────────────
+  traces.push({x:dates,y:closes,type:'scatter',mode:'lines',name:'Precio 1H',
+    line:{color:'rgba(0,255,65,.9)',width:1.8},showlegend:false,
+    hovertemplate:'<b>%{x|%d %b %H:%M}</b>  %{y}<extra></extra>'});
+
+  // ── HOD / LOD / PDH / PDL (calculados desde las velas) ──
+  const lastDate=dates[dates.length-1];
+  const todayStr=lastDate.toISOString().slice(0,10);
+  const todayC=cd.candles.filter(c=>new Date(c.x).toISOString().slice(0,10)===todayStr);
+  const prevC=cd.candles.filter(c=>new Date(c.x).toISOString().slice(0,10)<todayStr);
+  // HOD/LOD: máx/mín del día actual excluyendo la última vela (abierta)
+  const todayClosed=todayC.length>1?todayC.slice(0,-1):todayC;
+  const hod=todayClosed.length?Math.max(...todayClosed.map(c=>c.h)):null;
+  const lod=todayClosed.length?Math.min(...todayClosed.map(c=>c.l)):null;
+  // PDH/PDL: último día completo anterior
+  const prevDays=[...new Set(prevC.map(c=>new Date(c.x).toISOString().slice(0,10)))].sort();
+  const prevDay=prevDays[prevDays.length-1];
+  const ydayC=prevDay?prevC.filter(c=>new Date(c.x).toISOString().slice(0,10)===prevDay):[];
+  const pdh=ydayC.length?Math.max(...ydayC.map(c=>c.h)):null;
+  const pdl=ydayC.length?Math.min(...ydayC.map(c=>c.l)):null;
+  const lblIdx=Math.floor(dates.length*.04);
+  function hLvl(y,col,dash,w,lbl){
+    if(y==null)return;
+    shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:y,y1:y,line:{color:col,width:w||1.5,dash:dash||'solid'}});
+    traces.push({x:[dates[lblIdx]],y:[y],type:'scatter',mode:'text',text:[lbl],
+      textposition:'top right',showlegend:false,hoverinfo:'skip',
+      textfont:{color:col,size:9,family:'Share Tech Mono'}});
+  }
+  hLvl(hod,'rgba(255,215,0,.85)','solid',2,'HOD');
+  hLvl(lod,'rgba(0,191,255,.85)','solid',2,'LOD');
+  hLvl(pdh,'rgba(218,165,32,.65)','dash',1,'PDH');
+  hLvl(pdl,'rgba(72,209,204,.65)','dash',1,'PDL');
+
+  // ── FVG — rectángulos de vacíos ──────────────────────────
+  const fvgs=cd.fvg||[];
+  fvgs.forEach(z=>{
+    const isBull=z.direction==='bull';
+    if(!ind.fvgAll){if(isBull&&!ind.fvgUp)return;if(!isBull&&!ind.fvgDown)return;}
+    const al=z.touched?'.07':'.16';
+    const fc=isBull?`rgba(0,255,65,${al})`:`rgba(255,0,51,${al})`;
+    const bc=isBull?`rgba(0,255,65,${z.touched?'.25':'.5'})`:`rgba(255,0,51,${z.touched?'.25':'.5'})`;
+    shapes.push({type:'rect',xref:'paper',yref:'y',x0:0,x1:1,
+      y0:z.bottom,y1:z.top,fillcolor:fc,line:{color:bc,width:z.touched?.5:1}});
+  });
+
+  // ── Marcadores RSI OB/OS ─────────────────────────────────
+  if(ind.rsi){
+    const ros=cd.rsi_os||[],rob=cd.rsi_ob||[];
+    if(ros.length)traces.push({x:ros.map(p=>new Date(p.x)),y:ros.map(p=>p.y),
+      type:'scatter',mode:'markers',name:'RSI<30',showlegend:false,
+      marker:{color:'#00ff41',size:9,symbol:'triangle-up',line:{color:'rgba(0,0,0,.6)',width:1}},
+      hovertemplate:'▲ RSI sobreventa  %{y}<extra></extra>'});
+    if(rob.length)traces.push({x:rob.map(p=>new Date(p.x)),y:rob.map(p=>p.y),
+      type:'scatter',mode:'markers',name:'RSI>70',showlegend:false,
+      marker:{color:'#ff0033',size:9,symbol:'triangle-down',line:{color:'rgba(0,0,0,.6)',width:1}},
+      hovertemplate:'▼ RSI sobrecompra  %{y}<extra></extra>'});
+  }
+
+  // ── Aperturas anual / semanal ────────────────────────────
+  if(ind.open){
+    const op=apiData.opens||{};
+    if(op.year_open){
+      shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:op.year_open,y1:op.year_open,
+        line:{color:'rgba(100,220,255,.5)',width:1.2,dash:'dashdot'}});
+      traces.push({x:[dates[lblIdx]],y:[op.year_open],type:'scatter',mode:'text',
+        text:['AÑO'],textposition:'bottom right',showlegend:false,hoverinfo:'skip',
+        textfont:{color:'rgba(100,220,255,.75)',size:9,family:'Share Tech Mono'}});
+    }
+    if(op.week_open){
+      shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:op.week_open,y1:op.week_open,
+        line:{color:'rgba(0,255,160,.4)',width:1,dash:'dot'}});
+      traces.push({x:[dates[lblIdx]],y:[op.week_open],type:'scatter',mode:'text',
+        text:['SEM'],textposition:'top right',showlegend:false,hoverinfo:'skip',
+        textfont:{color:'rgba(0,255,160,.65)',size:9,family:'Share Tech Mono'}});
+    }
+  }
+
+  // ── Patrones M / W / HCH ─────────────────────────────────
+  const pats=apiData.patterns||{};
+  function addM(m){if(!m)return;
+    const col=m.estado==='confirmado'?'rgba(255,23,68,.9)':'rgba(255,152,0,.85)';
+    const dash=m.estado==='confirmado'?'solid':'dot';
+    traces.push({x:[new Date(m.p1_x),new Date(m.p2_x)],y:[m.p1_y,m.p2_y],
+      mode:'lines+markers+text',name:'Patrón M',showlegend:false,
+      line:{color:col,width:2,dash},marker:{color:col,size:9,symbol:'triangle-down'},
+      text:['P1','P2'],textposition:'top center',textfont:{color:col,size:10,family:'Share Tech Mono'},
+      hovertemplate:`<b>M ${m.estado}</b><extra></extra>`});
+    shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:m.neckline,y1:m.neckline,
+      line:{color:col,width:1,dash:'dashdot'}});
+  }
+  function addW(w){if(!w)return;
+    const col=w.estado==='confirmado'?'rgba(0,230,118,.9)':'rgba(0,200,255,.85)';
+    const dash=w.estado==='confirmado'?'solid':'dot';
+    traces.push({x:[new Date(w.v1_x),new Date(w.v2_x)],y:[w.v1_y,w.v2_y],
+      mode:'lines+markers+text',name:'Patrón W',showlegend:false,
+      line:{color:col,width:2,dash},marker:{color:col,size:9,symbol:'triangle-up'},
+      text:['V1','V2'],textposition:'bottom center',textfont:{color:col,size:10,family:'Share Tech Mono'},
+      hovertemplate:`<b>W ${w.estado}</b><extra></extra>`});
+    shapes.push({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:w.neckline,y1:w.neckline,
+      line:{color:col,width:1,dash:'dashdot'}});
+  }
+  function addH(h){if(!h)return;
+    const isBear=h.bearish;
+    const col=isBear?(h.estado==='confirmado'?'rgba(255,23,68,.9)':'rgba(255,152,0,.85)')
+                    :(h.estado==='confirmado'?'rgba(0,230,118,.9)':'rgba(0,200,255,.85)');
+    const dash=h.estado==='confirmado'?'solid':'dot';
+    traces.push({x:[new Date(h.hi_x),new Date(h.cab_x),new Date(h.hd_x)],
+      y:[h.hi_y,h.cab_y,h.hd_y],mode:'lines+markers+text',showlegend:false,
+      name:isBear?'HCH':'HCHi',line:{color:col,width:2,dash},
+      marker:{color:col,size:[7,11,7],symbol:isBear?'triangle-down':'triangle-up'},
+      text:['HI','CAB',h.estado==='formando_hd'?'HD?':'HD'],
+      textposition:isBear?'top center':'bottom center',
+      textfont:{color:col,size:10,family:'Share Tech Mono'},
+      hovertemplate:`<b>${isBear?'HCH':'HCH Inv'} ${h.estado}</b><extra></extra>`});
+    if(h.nk1_x&&h.nk2_x)traces.push({x:[new Date(h.nk1_x),new Date(h.nk2_x)],
+      y:[h.nk1_y,h.nk2_y],mode:'lines',showlegend:false,
+      line:{color:col,width:1.2,dash:'dashdot'},hoverinfo:'skip'});
+  }
+  addM(pats.M);addW(pats.W);addH(pats.HCH);addH(pats.HCH_inv);
+
+  // ── Layout ───────────────────────────────────────────────
+  const layout={
+    paper_bgcolor:'#000000',plot_bgcolor:'#010601',
+    margin:{t:10,r:70,b:50,l:50},
+    hovermode:'x unified',showlegend:false,shapes,
+    hoverlabel:{bgcolor:'rgba(0,3,0,.96)',bordercolor:'rgba(0,255,65,.2)',
+      font:{family:'Share Tech Mono,monospace',size:11,color:'#c8ffd4'}},
+    xaxis:{type:'date',gridcolor:'rgba(0,255,65,.04)',linecolor:'rgba(0,255,65,.08)',
+      tickfont:{color:'rgba(0,255,65,.3)',size:9,family:'Share Tech Mono'},
+      showspikes:true,spikecolor:'rgba(0,255,65,.15)',spikedash:'dot',spikethickness:1,
+      rangeslider:{visible:false}},
+    yaxis:{gridcolor:'rgba(0,255,65,.04)',linecolor:'rgba(0,255,65,.08)',
+      tickfont:{color:'rgba(0,255,65,.3)',size:9,family:'Share Tech Mono'},
+      side:'right',tickformat:yFmt},
+    dragmode:'pan',font:{family:'Share Tech Mono,monospace'}
+  };
+
   const xEnd=dates[dates.length-1];
   const x5d=xEnd?new Date(xEnd.getTime()-5*24*60*60*1000):null;
   const xU=xR||(x5d?[x5d.toISOString(),xEnd.toISOString()]:null);
   if(xU)layout.xaxis.range=xU;
+
   function yRange(xrng){
     const x0=new Date(xrng[0]).getTime(),x1=new Date(xrng[1]).getTime();
     const vc=cd.candles.filter(c=>c.x>=x0&&c.x<=x1);
@@ -947,8 +1084,24 @@ function renderP(apiData){
     const pad=(mx-mn)*.09;return[mn-pad,mx+pad];
   }
   if(xU){const yr=yRange(xU);if(yr)layout.yaxis.range=yr}
-  Plotly.newPlot('plotDiv',traces,layout,{responsive:true,displayModeBar:false});
-  setTimeout(()=>{try{Plotly.Plots.resize('plotDiv');}catch(e){}},100);
+
+  Plotly.newPlot('plotDiv',traces,layout,{responsive:true,scrollZoom:true,displayModeBar:false,doubleClick:'reset'});
+
+  // Sincronizar zoom con panel RSI
+  const div=document.getElementById('plotDiv');
+  if(div._rl){try{div.removeListener('plotly_relayout',div._rl);}catch(e){}}
+  div._rl=ed=>{
+    if(ed['xaxis.range[0]']&&ed['xaxis.range[1]']){
+      xR=[ed['xaxis.range[0]'],ed['xaxis.range[1]']];
+      const yr=yRange(xR);if(yr)Plotly.relayout('plotDiv',{'yaxis.range':yr});
+      Plotly.relayout('rsiDiv',{'xaxis.range':xR});
+    }else if(ed['xaxis.autorange']===true){
+      xR=null;Plotly.relayout('rsiDiv',{'xaxis.autorange':true});
+    }
+  };
+  div.on('plotly_relayout',div._rl);
+  document.getElementById('rsiWrap').style.display='block';
+  renderRSI(cd,dates,xU);
 }
 
 function renderPatterns(data){
