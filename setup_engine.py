@@ -55,48 +55,55 @@ def detect_liquidity_levels(df: pd.DataFrame) -> dict:
     """
     Calcula HOD, LOD, PDH, PDL, WKH, WKL, MTH, MTL desde el DataFrame 1H.
     Columnas: Open/High/Low/Close (capitalizadas). Índice: DatetimeIndex UTC-aware.
+
+    IMPORTANTE: HOD/LOD/WKH/WKL/MTH/MTL se calculan desde df.iloc[:-3]
+    (excluyendo las 3 últimas velas que serán evaluadas como potenciales barridos).
+    Esto garantiza que `High > nivel` o `Low < nivel` sean detectables.
+    PDH/PDL vienen del día anterior → siempre pre-barrido por definición.
     """
-    if df.empty or len(df) < 4:
+    if df.empty or len(df) < 7:   # necesitamos al menos 4 de referencia + 3 de evaluación
         return {}
 
-    idx = df.index
-    if idx.tz is None:
-        idx = idx.tz_localize("UTC")
+    # df_ref: datos anteriores a la ventana de evaluación (excluye últimas 3 velas)
+    df_ref = df.iloc[:-3]
+
+    idx_ref = df_ref.index
+    if idx_ref.tz is None:
+        idx_ref = idx_ref.tz_localize("UTC")
     else:
-        idx = idx.tz_convert("UTC")
+        idx_ref = idx_ref.tz_convert("UTC")
 
-    df2 = df.copy()
-    df2.index = idx
-    dates_utc = idx.normalize()   # fecha sin hora
+    df_r = df_ref.copy()
+    df_r.index = idx_ref
+    dates_ref = idx_ref.normalize()
 
-    last_date = dates_utc[-1]
+    last_ref_date = dates_ref[-1]
 
-    # Días únicos con velas (en orden)
-    unique_days = sorted(dates_utc.unique())
+    # Días únicos en los datos de referencia
+    unique_days = sorted(dates_ref.unique())
 
-    # "Hoy" = la fecha de la última vela
-    # "Ayer" = el día anterior que tenga velas (maneja fines de semana)
-    today_mask    = dates_utc == last_date
-    today_data    = df2[today_mask]
+    # "Hoy en referencia" = la fecha de la última vela de referencia
+    today_mask = dates_ref == last_ref_date
+    today_data = df_r[today_mask]
 
-    # Buscar el día anterior hábil
-    prev_days = [d for d in unique_days if d < last_date]
+    # Día anterior hábil (para PDH/PDL)
+    prev_days      = [d for d in unique_days if d < last_ref_date]
     yesterday_data = pd.DataFrame()
     if prev_days:
-        prev_date = prev_days[-1]
-        yesterday_data = df2[dates_utc == prev_date]
+        prev_date      = prev_days[-1]
+        yesterday_data = df_r[dates_ref == prev_date]
 
-    # Semana: lunes de la semana de la última vela
-    week_start = last_date - pd.Timedelta(days=last_date.dayofweek)
-    week_mask  = (dates_utc >= week_start) & (dates_utc <= last_date)
-    week_data  = df2[week_mask]
+    # Semana de referencia
+    week_start = last_ref_date - pd.Timedelta(days=last_ref_date.dayofweek)
+    week_mask  = (dates_ref >= week_start) & (dates_ref <= last_ref_date)
+    week_data  = df_r[week_mask]
 
-    # Mes actual
-    month_mask = (idx.year == last_date.year) & (idx.month == last_date.month)
-    month_data = df2[month_mask]
+    # Mes de referencia
+    month_mask = (idx_ref.year == last_ref_date.year) & (idx_ref.month == last_ref_date.month)
+    month_data = df_r[month_mask]
 
-    def _hi(d): return float(d["High"].max())  if not d.empty else None
-    def _lo(d): return float(d["Low"].min())   if not d.empty else None
+    def _hi(d): return float(d["High"].max()) if not d.empty else None
+    def _lo(d): return float(d["Low"].min())  if not d.empty else None
 
     levels = {
         "hod": _hi(today_data),
