@@ -280,9 +280,9 @@ def _build_tg_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") ->
             if hora:
                 dia_es_str = dia_map.get(dia_name, dia_name)
                 if lang == "en":
-                    blocks.append(f"🕐 Range bar · {dia_es_str}  {hora} UTC")
+                    blocks.append(f"🕐 Vela 1H · {dia_es_str}  {hora} UTC")
                 else:
-                    blocks.append(f"🕐 Vela de rango · {dia_es_str}  {hora} UTC")
+                    blocks.append(f"🕐 Vela 1H · {dia_es_str}  {hora} UTC")
 
             # Precio actual
             if close_v is not None:
@@ -726,7 +726,7 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     else:
         conf_label = f"{puntos}/{max_confs} confluencias"
         sec_header = "<b>Confluencias activas:</b>"
-        candle_lbl = "Vela de rango"
+        candle_lbl = "Vela 1H"
         contr_warn = ("⚠️ <b>SEÑALES CONTRADICTORIAS</b> — las confluencias apuntan en direcciones "
                       "opuestas. Setup no válido.") if contradiccion else ""
 

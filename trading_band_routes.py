@@ -513,24 +513,14 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
 
     sym = ticker.upper()
     try:
-        if use_range_bars:
-            raw = await _download(sym, period="60d", interval="5m")
-        else:
-            raw = await _download(sym, period="2y", interval="4h")
+        raw = await _download(sym, period="6mo", interval="1h")
 
         if raw is None or (hasattr(raw, "empty") and raw.empty):
             return {"error": f"Sin datos para {sym}"}
 
         df = _clean(raw)
-
-        if use_range_bars:
-            range_calc = cfg.get("range_calc", cfg.get("range"))
-            rb = build_range_bars(df, range_calc)
-            df_calc = rb if (rb is not None and not rb.empty) else df
-            bar_type = f"Range {cfg.get('range', 1000)}"
-        else:
-            df_calc = df
-            bar_type = "4h"
+        df_calc = df
+        bar_type = "1h"
 
         if df_calc.empty:
             return {"error": "No se pudieron construir barras"}

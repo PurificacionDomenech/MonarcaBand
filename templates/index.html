@@ -921,7 +921,7 @@ function renderP(apiData){
   const yFmt=last>500?',.0f':last>1?',.2f':',.4f';
   const traces=[],shapes=[];
   traces.push({x:dates,y:closes,type:'scatter',mode:'none',name:'',fill:'tozeroy',fillcolor:'rgba(255,255,255,.06)',hoverinfo:'skip',showlegend:false});
-  traces.push({x:dates,y:closes,type:'scatter',mode:'lines',name:'Precio 4H',line:{color:'rgba(255,255,255,.92)',width:1.8},fill:'tozeroy',fillcolor:'rgba(255,255,255,.04)',hovertemplate:'<b>%{x|%d %b %Y %H:%M}</b><br><b>$%{y:,.2f}</b><extra></extra>'});
+  traces.push({x:dates,y:closes,type:'scatter',mode:'lines',name:'Precio 1H',line:{color:'rgba(255,255,255,.92)',width:1.8},fill:'tozeroy',fillcolor:'rgba(255,255,255,.04)',hovertemplate:'<b>%{x|%d %b %Y %H:%M}</b><br><b>$%{y:,.2f}</b><extra></extra>'});
   traces.push({x:dates,open:cd.candles.map(c=>c.o),high:cd.candles.map(c=>c.h),low:cd.candles.map(c=>c.l),close:closes,type:'candlestick',name:'OHLC',increasing:{line:{color:'rgba(0,255,65,.65)',width:1},fillcolor:'rgba(0,255,65,.1)'},decreasing:{line:{color:'rgba(255,51,51,.65)',width:1},fillcolor:'rgba(255,51,51,.1)'},visible:'legendonly',hovertemplate:'O:%{open:.2f} H:%{high:.2f} L:%{low:.2f} C:%{close:.2f}<extra>OHLC</extra>'});
   const esd=cd[`ema${cfg.ema_short}`]||[],eld=cd[`ema${cfg.ema_long}`]||[];
   if(ind.emaS&&esd.length)traces.push({x:esd.map(p=>new Date(p.x)),y:esd.map(p=>p.y),type:'scatter',mode:'lines',name:`EMA ${cfg.ema_short}`,line:{color:'rgba(30,144,255,.8)',width:1.5},hovertemplate:`EMA${cfg.ema_short}: $%{y:,.2f}<extra></extra>`});
@@ -1244,7 +1244,7 @@ async function loadNPStatus() {
     const d4 = await r4.json();
     const st = document.getElementById('npStatus');
     if (d4.ok) {
-      st.innerText = `✅ Sistema activo · Revisión cada 4h · Próxima: ${d4.next_run || '—'}`;
+      st.innerText = `✅ Sistema activo · Revisión cada 1h · Próxima: ${d4.next_run || '—'}`;
       st.style.color = '#00ff41';
     } else {
       st.innerText = '⚠️ Sistema en modo básico';

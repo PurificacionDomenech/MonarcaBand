@@ -329,36 +329,13 @@ async def async_download(ticker, **kwargs):
 
 
 async def async_download_rb(ticker: str, label: str = "") -> tuple:
-    """Descarga datos de alta frecuencia (5m) y construye velas de rango.
+    """Descarga velas de 1 hora directamente de yfinance.
     Retorna (DataFrame con columnas Open/High/Low/Close/Volume, bar_type_label)."""
-    if _build_rb is None:
-        df = await async_download(ticker, period="6mo", interval="4h", progress=False)
-        return clean_df(df), "4h"
-
-    tb_cfg = _get_tb_cfg(ticker)
-    range_size = tb_cfg.get("range_calc", tb_cfg.get("range", 0))
-    range_display = tb_cfg.get("range", 1000)
-
-    if range_size <= 0:
-        df = await async_download(ticker, period="6mo", interval="4h", progress=False)
-        return clean_df(df), "4h"
-
-    df_raw = await async_download(ticker, period="60d", interval="5m", progress=False)
-    df = clean_df(df_raw)
+    df = await async_download(ticker, period="6mo", interval="1h", progress=False)
+    df = clean_df(df)
     if df.empty:
-        return df, "5m"
-
-    df.columns = [c.lower() for c in df.columns]
-    df_rb = _build_rb(df, range_size)
-    if df_rb is not None and not df_rb.empty and len(df_rb) < len(df):
-        df = df_rb.rename(columns={
-            "open": "Open", "high": "High", "low": "Low",
-            "close": "Close", "volume": "Volume"
-        })
-        return df, f"Rango {range_display}"
-    else:
-        df.columns = [c.capitalize() for c in df.columns]
-        return df, "5m"
+        return df, "1h"
+    return df, "1h"
 
 
 def get_cfg(t):
@@ -1037,11 +1014,11 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
       2) Divergencia RSI en zona (RSI≤45 alcista / RSI≥55 bajista)
       3) Toque de nivel clave / fractal
     Solo alerta si >=2 confluencias alineadas y el cruce ocurrió
-    en las últimas 2 velas 1h (≤2h de antigüedad).
+    en la última vela 1h (≤1h de antigüedad).
     """
     if not HAS_NOTIFIER or not HAS_TB:
         return {}
-    if _build_rb is None or _detect_divs is None:
+    if _detect_divs is None:
         return {}
 
     now = time.time()
@@ -1096,17 +1073,14 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                 if i < 1:
                     continue
 
-                # Filtro de antigüedad: velas de rango <= 12h,
-                # pero si hay precio inyectado (fila fantasma <=15m) permitirla
+                # Filtro de antigüedad: velas 1h <= 1h de antigüedad
                 ts = df_calc.index[i]
                 try:
                     ts_parsed = pd.Timestamp(ts)
                     if ts_parsed.tzinfo is None:
                         ts_parsed = ts_parsed.tz_localize("UTC")
                     age_min = (pd.Timestamp.now(tz="UTC") - ts_parsed).total_seconds() / 60
-                    # Fantasma (injectada viva): <= 15 min permitida siempre
-                    # Velas reales: <= 12h
-                    max_age_min = 15 if age_min < 20 else 12 * 60
+                    max_age_min = 60   # 1 hora
                     if age_min > max_age_min:
                         continue
                 except Exception:
@@ -1302,7 +1276,7 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                 # Filtro de frescura: fantasma <=15min permitida, velas reales <=12h
                 try:
                     age_min = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 60
-                    max_age_min = 15 if age_min < 20 else 12 * 60
+                    max_age_min = 60   # 1 hora
                     if age_min > max_age_min:
                         continue
                 except Exception:
@@ -1445,7 +1419,7 @@ async def daily_catchup():
         await notify_users_with_alerts(tb_alerts)
 
     # 2) Alertas clásicas
-    print("[catchup] Revisando vela de rango actual (máx 12h de antigüedad)…")
+    print("[catchup] Revisando vela 1h actual (máx 1h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
         catchup_tickers, num_candles=1, label="catchup", max_per_ticker=1
     )
@@ -1814,7 +1788,7 @@ if HAS_SCHEDULER:
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
-            print(f"[scheduler] Iniciado · TB confluencias cada 5 min + revisión 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
+            print(f"[scheduler] Iniciado · TB confluencias cada 30 min + revisión 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
             # Catch-up: enviar alertas de las últimas 24h al arrancar
             asyncio.create_task(daily_catchup())
             asyncio.create_task(_warm_row_cache())
@@ -2023,21 +1997,9 @@ async def get_chart(ticker: str):
         range_display = tb_cfg.get("range", 1000)
 
         use_rb = HAS_TB and _build_rb is not None and range_size > 0
-        if use_rb:
-            df_raw = await async_download(sym, period="60d", interval="5m", progress=False)
-            df = clean_df(df_raw)
-            df.columns = [c.lower() for c in df.columns]
-            df_rb = _build_rb(df, range_size)
-            if df_rb is not None and not df_rb.empty:
-                df = df_rb.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close","volume":"Volume"})
-                bar_type = f"Rango {range_display}"
-            else:
-                df.columns = [c.capitalize() for c in df.columns]
-                bar_type = "5m"
-        else:
-            df = await async_download(sym, period="2y", interval="4h", progress=False)
-            df = clean_df(df)
-            bar_type = "4h"
+        df = await async_download(sym, period="6mo", interval="1h", progress=False)
+        df = clean_df(df)
+        bar_type = "1h"
 
         if df.empty:
             return {"error": "Simbolo no encontrado: " + ticker}
