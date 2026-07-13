@@ -529,9 +529,7 @@ window.onload=()=>{
     });
     loadSym('^DJI');
     startW();
-  }catch(e){
-    document.getElementById('plotDiv').innerHTML='<div style="color:red;font-size:20px;padding:20px;background:#300">ONLOAD ERROR: '+e.message+'</div>';
-  }
+  }catch(e){console.error('ONLOAD ERROR:',e)}
 };
 
 const fid=t=>'f_'+t.replace(/[^a-z0-9]/gi,'_');
@@ -822,7 +820,6 @@ async function loadSym(s){
     lastData=data;
     document.getElementById('lw').style.display='none';
     {const lbl=document.getElementById('chart-bar-label');if(lbl)lbl.textContent='GRÁFICO 1H';}
-    document.getElementById('plotDiv').innerHTML='<div style="color:yellow;font-size:24px;padding:20px;background:#440">BEFORE RENDERP</div>';
     renderP(data);
     updateSB(data);renderCA();renderFVG(data);renderPatterns(data);
     if(dbg)dbg.style.background='green';
