@@ -56,64 +56,60 @@ def detect_liquidity_levels(df: pd.DataFrame) -> dict:
     Calcula HOD, LOD, PDH, PDL, WKH, WKL, MTH, MTL desde el DataFrame 1H.
     Columnas: Open/High/Low/Close (capitalizadas). Índice: DatetimeIndex UTC-aware.
 
-    IMPORTANTE: HOD/LOD/WKH/WKL/MTH/MTL se calculan desde df.iloc[:-3]
-    (excluyendo las 3 últimas velas que serán evaluadas como potenciales barridos).
-    Esto garantiza que `High > nivel` o `Low < nivel` sean detectables.
-    PDH/PDL vienen del día anterior → siempre pre-barrido por definición.
+    Estrategia de referencia:
+    - La fecha "hoy/ayer/semana/mes" se ancla a la ÚLTIMA vela del df completo.
+    - HOD/LOD/WKH/WKL/MTH/MTL se computan desde df.iloc[:-3] para que las
+      últimas 3 velas puedan superar esos niveles (necesario para detectar barridos).
+    - PDH/PDL se buscan también en df.iloc[:-3] pero usando la fecha de ayer
+      determinada desde el df completo → correcto en lunes y semana corta.
     """
-    if df.empty or len(df) < 7:   # necesitamos al menos 4 de referencia + 3 de evaluación
+    if df.empty or len(df) < 7:
         return {}
 
-    # df_ref: datos anteriores a la ventana de evaluación (excluye últimas 3 velas)
-    df_ref = df.iloc[:-3]
+    # ── Anclar fechas al df completo ────────────────────────────
+    full_idx = df.index
+    if full_idx.tz is None:
+        full_idx = full_idx.tz_localize("UTC")
+    else:
+        full_idx = full_idx.tz_convert("UTC")
+    full_dates = full_idx.normalize()
+    last_date  = full_dates[-1]                         # "hoy" real
 
+    # Todos los días únicos con velas (para encontrar "ayer" incluso en lunes)
+    all_unique_days = sorted(full_dates.unique())
+    prev_days   = [d for d in all_unique_days if d < last_date]
+    prev_date   = prev_days[-1] if prev_days else None  # día anterior hábil
+
+    # ── Datos de referencia: excluye últimas 3 velas ────────────
+    df_ref = df.iloc[:-3].copy()
     idx_ref = df_ref.index
     if idx_ref.tz is None:
         idx_ref = idx_ref.tz_localize("UTC")
     else:
         idx_ref = idx_ref.tz_convert("UTC")
+    df_ref.index = idx_ref
+    dates_ref    = idx_ref.normalize()
 
-    df_r = df_ref.copy()
-    df_r.index = idx_ref
-    dates_ref = idx_ref.normalize()
-
-    last_ref_date = dates_ref[-1]
-
-    # Días únicos en los datos de referencia
-    unique_days = sorted(dates_ref.unique())
-
-    # "Hoy en referencia" = la fecha de la última vela de referencia
-    today_mask = dates_ref == last_ref_date
-    today_data = df_r[today_mask]
-
-    # Día anterior hábil (para PDH/PDL)
-    prev_days      = [d for d in unique_days if d < last_ref_date]
-    yesterday_data = pd.DataFrame()
-    if prev_days:
-        prev_date      = prev_days[-1]
-        yesterday_data = df_r[dates_ref == prev_date]
-
-    # Semana de referencia
-    week_start = last_ref_date - pd.Timedelta(days=last_ref_date.dayofweek)
-    week_mask  = (dates_ref >= week_start) & (dates_ref <= last_ref_date)
-    week_data  = df_r[week_mask]
-
-    # Mes de referencia
-    month_mask = (idx_ref.year == last_ref_date.year) & (idx_ref.month == last_ref_date.month)
-    month_data = df_r[month_mask]
+    # ── Subconjuntos de referencia ───────────────────────────────
+    today_ref     = df_ref[dates_ref == last_date]   # puede estar vacío (primeras horas)
+    yest_ref      = df_ref[dates_ref == prev_date]   if prev_date is not None else pd.DataFrame()
+    week_start    = last_date - pd.Timedelta(days=last_date.dayofweek)
+    week_ref      = df_ref[(dates_ref >= week_start) & (dates_ref <= last_date)]
+    month_ref     = df_ref[(idx_ref.year  == last_date.year) &
+                            (idx_ref.month == last_date.month)]
 
     def _hi(d): return float(d["High"].max()) if not d.empty else None
     def _lo(d): return float(d["Low"].min())  if not d.empty else None
 
     levels = {
-        "hod": _hi(today_data),
-        "lod": _lo(today_data),
-        "pdh": _hi(yesterday_data),
-        "pdl": _lo(yesterday_data),
-        "wkh": _hi(week_data),
-        "wkl": _lo(week_data),
-        "mth": _hi(month_data),
-        "mtl": _lo(month_data),
+        "hod": _hi(today_ref),
+        "lod": _lo(today_ref),
+        "pdh": _hi(yest_ref),
+        "pdl": _lo(yest_ref),
+        "wkh": _hi(week_ref),
+        "wkl": _lo(week_ref),
+        "mth": _hi(month_ref),
+        "mtl": _lo(month_ref),
     }
     return {k: v for k, v in levels.items() if v is not None}
 
@@ -193,6 +189,45 @@ def detect_liquidity_sweep(df: pd.DataFrame, levels: dict) -> dict | None:
                         best = candidate
 
     return best
+
+
+def _get_all_sweeps_by_direction(
+    df: pd.DataFrame,
+    levels: dict,
+    direction: str,
+) -> list:
+    """
+    Devuelve TODOS los barridos en las últimas 3 velas que coincidan con 'direction'.
+    Usado por score_setup para sumar los tiers activos (minor +1, medium +1, major +2).
+    """
+    if not levels or len(df) < 4:
+        return []
+
+    tail = df.iloc[-3:]
+    n    = len(df)
+    results = []
+    seen_level_types = set()  # evitar duplicados del mismo nivel
+
+    for i, (ts, row) in enumerate(tail.iterrows()):
+        bar_idx = n - 3 + i
+        hi  = float(row["High"])
+        lo  = float(row["Low"])
+
+        for lname, lprice in levels.items():
+            if lprice is None or lname in seen_level_types:
+                continue
+            tier = _TIER.get(lname, "minor")
+
+            if lname in _HIGH_LEVELS and direction == "bearish" and hi > lprice:
+                results.append({"level_type": lname, "level_tier": tier,
+                                 "direction": "bearish", "bar_idx": bar_idx})
+                seen_level_types.add(lname)
+            elif lname in _LOW_LEVELS and direction == "bullish" and lo < lprice:
+                results.append({"level_type": lname, "level_tier": tier,
+                                 "direction": "bullish", "bar_idx": bar_idx})
+                seen_level_types.add(lname)
+
+    return results
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -381,7 +416,7 @@ def _is_session_active(df: pd.DataFrame) -> bool:
 # 7. PATRONES M/W/HCH
 # ─────────────────────────────────────────────────────────────────
 
-_FORMING_ESTADOS = {"formando_p2", "formando_v2", "formando_hd", "formando"}
+_FORMING_ESTADOS = {"formando_p2", "formando_v2", "formando_hd"}
 _CONFIRM_ESTADOS = {"confirmado"}
 
 
@@ -524,10 +559,17 @@ def score_setup(
     bd["div_pts"] = div_pts
     pts += div_pts
 
-    # ── Liquidez ─────────────────────────────────────────────────
-    tier = sweep.get("level_tier", "minor")
-    liq_pts = {"minor": 1, "medium": 2, "major": 4}.get(tier, 1)
-    liq_pts = min(liq_pts, 4)
+    # ── Liquidez: suma de tiers activos en la misma dirección ────
+    # minor +1 | medium +1 | major +2  (máx 4 si los 3 presentes)
+    all_sweeps = _get_all_sweeps_by_direction(df, levels, direction)
+    has_minor  = any(s["level_tier"] == "minor"  for s in all_sweeps)
+    has_medium = any(s["level_tier"] == "medium" for s in all_sweeps)
+    has_major  = any(s["level_tier"] == "major"  for s in all_sweeps)
+    liq_pts = 0
+    if has_minor:  liq_pts += 1
+    if has_medium: liq_pts += 1
+    if has_major:  liq_pts += 2
+    liq_pts = max(1, min(liq_pts, 4))  # gate pasó → ≥1 pt garantizado
     bd["liq_pts"] = liq_pts
     pts += liq_pts
 
