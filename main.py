@@ -651,6 +651,15 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         if isinstance(rsi_series, pd.DataFrame): rsi_series = rsi_series.iloc[:, 0]
         all_divs = _detect_divs(df, rsi_series)
         recent_divs = [d for d in all_divs if d.get("bar", 0) >= len(df) - 60]
+
+        # Filtrar: solo divergencias alineadas con el RSI actual
+        # RSI < 40 → solo alcistas | RSI > 60 → solo bajistas
+        if recent_divs:
+            if rsi < 40:
+                recent_divs = [d for d in recent_divs if d["type"] in ("bull", "hbull")]
+            elif rsi > 60:
+                recent_divs = [d for d in recent_divs if d["type"] in ("bear", "hbear")]
+
         if recent_divs:
             best = recent_divs[0]
             div_type = best["type"]
@@ -667,33 +676,51 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     fvg_data = None
     if _detect_fvg is not None:
         fvgs = _detect_fvg(df, max_zonas=10)
-        for fvg in fvgs:
-            # Si el precio está dentro o muy cerca del FVG (sin romperlo)
-            if fvg.get("touched") and not fvg.get("frozen"):
-                # FVG alcista = zona de soporte (bullish) | FVG bajista = resistencia (bearish)
-                fvg_dir = "bullish" if fvg["direction"] == "bull" else "bearish"
-                fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
-                           f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
-                fvg_data = fvg
-                raw.append({"id": 3, "ok": True, "texto": fvg_text, "tipo": fvg_dir})
-                break
+        # Ordenar por distancia al precio actual: más cercano primero
+        active = [f for f in fvgs if f.get("touched") and not f.get("frozen")]
+        active.sort(key=lambda f: abs(price - (f["top"]+f["bottom"])/2))
+        for fvg in active:
+            fvg_dir = "bullish" if fvg["direction"] == "bull" else "bearish"
+            fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
+                       f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
+            fvg_data = fvg
+            raw.append({"id": 3, "ok": True, "texto": fvg_text, "tipo": fvg_dir})
+            break
     if not fvg_data:
         raw.append({"id": 3, "ok": False,
             "texto": "Sin vacíos FVG activos", "tipo": "info"})
 
-    # ④ Patrones M/W/HCH
+    # ④ Patrones M/W/HCH — sólo el más reciente según timestamp del pivote
     pattern_data = None
     if _calc_pattern_mw is not None:
         pat = _calc_pattern_mw(df)
-        if pat.get("M") and pat["M"].get("estado") in ("confirmado", "formando_p2"):
+        m_pat = pat.get("M")
+        w_pat = pat.get("W")
+        m_ok = m_pat and m_pat.get("estado") in ("confirmado", "formando_p2")
+        w_ok = w_pat and w_pat.get("estado") in ("confirmado", "formando_v2")
+        # Elegir el más reciente por timestamp de pivote principal
+        def _ts(p):
+            if not p: return 0
+            # p1_x (M) o v2_x (W) — último pivote del patrón
+            return p.get("p2_x") or p.get("v2_x") or p.get("p1_x") or p.get("v1_x") or 0
+        if m_ok and w_ok:
+            if _ts(w_pat) > _ts(m_pat):
+                raw.append({"id": 4, "ok": True,
+                    "texto": f"Patrón W (doble suelo) {w_pat['estado']}", "tipo": "bullish"})
+                pattern_data = w_pat
+            else:
+                raw.append({"id": 4, "ok": True,
+                    "texto": f"Patrón M (doble techo) {m_pat['estado']}", "tipo": "bearish"})
+                pattern_data = m_pat
+        elif m_ok:
             raw.append({"id": 4, "ok": True,
-                "texto": f"Patrón M (doble techo) {pat['M']['estado']}", "tipo": "bearish"})
-            pattern_data = pat["M"]
-        elif pat.get("W") and pat["W"].get("estado") in ("confirmado", "formando_v2"):
+                "texto": f"Patrón M (doble techo) {m_pat['estado']}", "tipo": "bearish"})
+            pattern_data = m_pat
+        elif w_ok:
             raw.append({"id": 4, "ok": True,
-                "texto": f"Patrón W (doble suelo) {pat['W']['estado']}", "tipo": "bullish"})
-            pattern_data = pat["W"]
-    if _calc_pattern_hch is not None:
+                "texto": f"Patrón W (doble suelo) {w_pat['estado']}", "tipo": "bullish"})
+            pattern_data = w_pat
+    if _calc_pattern_hch is not None and not pattern_data:
         hch = _calc_pattern_hch(df)
         if hch.get("HCH") and hch["HCH"].get("estado") in ("confirmado", "formando_hd"):
             raw.append({"id": 4, "ok": True,
