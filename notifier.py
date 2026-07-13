@@ -1121,13 +1121,18 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
         header = f"⚠️ <b>TRADING BAND — SETUP EN FORMACIÓN</b>"
         sub    = f"FAVORABLE — {puntos}/15 pts"
 
+    if nivel == "normal":
+        setup_label = f"SETUP {dir_es} — VIGILAR TRAMPA"
+    else:
+        setup_label = f"SETUP {dir_es} CONFIRMADO"
+
     lines = [
         header,
         "",
         f"📊 <b>{ticker}</b>  |  1H  |  {price_str}",
         f"🕐 {now_str}",
         "",
-        f"{dir_emoji} <b>SETUP {dir_es} CONFIRMADO</b>",
+        f"{dir_emoji} <b>{setup_label}</b>",
         "",
     ]
 

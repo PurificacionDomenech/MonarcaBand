@@ -123,17 +123,24 @@ _TIER = {
 }
 _TIER_ORDER = {"minor": 0, "medium": 1, "major": 2}
 
+# Niveles altos: se barren cuando High > nivel → trampa alcista → setup bajista
+_HIGH_LEVELS = {"hod", "pdh", "wkh", "mth"}
+# Niveles bajos: se barren cuando Low < nivel → trampa bajista → setup alcista
+_LOW_LEVELS  = {"lod", "pdl", "wkl", "mtl"}
+
 
 def detect_liquidity_sweep(df: pd.DataFrame, levels: dict) -> dict | None:
     """
     Examina las últimas 3 velas en busca de un barrido de liquidez.
+    Niveles altos (HOD/PDH/WKH/MTH): barrido cuando High > nivel → dirección bearish.
+    Niveles bajos (LOD/PDL/WKL/MTL): barrido cuando Low  < nivel → dirección bullish.
     Si hay múltiples barridos, devuelve el de mayor tier.
     Devuelve None si no se detecta barrido.
     """
     if not levels or len(df) < 4:
         return None
 
-    tail = df.iloc[-3:]   # últimas 3 velas
+    tail = df.iloc[-3:]
     n    = len(df)
 
     best = None
@@ -148,33 +155,35 @@ def detect_liquidity_sweep(df: pd.DataFrame, levels: dict) -> dict | None:
                 continue
             tier = _TIER.get(lname, "minor")
 
-            # Barrido bajista (Low < nivel) → trampa bajista → setup largo
-            if lo < lprice:
-                candidate = {
-                    "level_type":  lname,
-                    "level_price": lprice,
-                    "level_tier":  tier,
-                    "direction":   "bullish",
-                    "bar_idx":     bar_idx,
-                    "sweep_high":  hi,
-                    "sweep_low":   lo,
-                }
-                if best is None or _TIER_ORDER[tier] > _TIER_ORDER[best["level_tier"]]:
-                    best = candidate
+            if lname in _HIGH_LEVELS:
+                # Barrido alcista del nivel alto → trampa alcista → setup corto
+                if hi > lprice:
+                    candidate = {
+                        "level_type":  lname,
+                        "level_price": lprice,
+                        "level_tier":  tier,
+                        "direction":   "bearish",
+                        "bar_idx":     bar_idx,
+                        "sweep_high":  hi,
+                        "sweep_low":   lo,
+                    }
+                    if best is None or _TIER_ORDER[tier] > _TIER_ORDER[best["level_tier"]]:
+                        best = candidate
 
-            # Barrido alcista (High > nivel) → trampa alcista → setup corto
-            if hi > lprice:
-                candidate = {
-                    "level_type":  lname,
-                    "level_price": lprice,
-                    "level_tier":  tier,
-                    "direction":   "bearish",
-                    "bar_idx":     bar_idx,
-                    "sweep_high":  hi,
-                    "sweep_low":   lo,
-                }
-                if best is None or _TIER_ORDER[tier] > _TIER_ORDER[best["level_tier"]]:
-                    best = candidate
+            elif lname in _LOW_LEVELS:
+                # Barrido bajista del nivel bajo → trampa bajista → setup largo
+                if lo < lprice:
+                    candidate = {
+                        "level_type":  lname,
+                        "level_price": lprice,
+                        "level_tier":  tier,
+                        "direction":   "bullish",
+                        "bar_idx":     bar_idx,
+                        "sweep_high":  hi,
+                        "sweep_low":   lo,
+                    }
+                    if best is None or _TIER_ORDER[tier] > _TIER_ORDER[best["level_tier"]]:
+                        best = candidate
 
     return best
 
@@ -223,8 +232,9 @@ def detect_active_divergence(
 ) -> dict | None:
     """
     Busca la divergencia RSI más reciente alineada con 'direction'.
-    Solo N1 y N2 son obligatorias. N3 se trata como bonus.
-    Ventana de recencia por nivel: N1 = últimas 6 velas, N2 = 11, N3 = 21.
+    SOLO N1 y N2 satisfacen el criterio obligatorio — N3 es bonus únicamente.
+    Ventana de recencia: N1 = últimas 6 velas, N2 = últimas 11.
+    Devuelve None si solo hay N3 activa (no pasa el gate obligatorio).
     """
     if not HAS_TB:
         return None
@@ -240,14 +250,17 @@ def detect_active_divergence(
     else:
         accepted_types = {"bear", "hbear"}
 
-    lb_by_level = {1: 6, 2: 11, 3: 21}
+    # Solo N1 y N2 como gate obligatorio
+    lb_mandatory = {1: 6, 2: 11}
 
     best = None
     for dv in all_divs:
         if dv["type"] not in accepted_types:
             continue
         lvl = dv["level"]
-        lb  = lb_by_level.get(lvl, 6)
+        if lvl not in lb_mandatory:
+            continue    # N3 no satisface el gate obligatorio
+        lb = lb_mandatory[lvl]
         if dv["bar"] < n - lb:
             continue    # demasiado antigua
         if best is None or dv["bar"] > best["bar"]:
@@ -474,11 +487,9 @@ def score_setup(
     bd  = {}
 
     # ── Divergencia ──────────────────────────────────────────────
-    div_pts = 1   # N1 siempre presente (criterio obligatorio)
+    # Detectar cuáles niveles están activos (N1, N2, N3) para puntuar cada uno
     n = len(rsi_series)
-    lb_n2, lb_n3 = 11, 21
-    # Buscar N2 alineada
-    has_n2 = has_n3 = False
+    has_n1 = has_n2 = has_n3 = False
     if HAS_TB:
         df_lower = df.rename(columns=str.lower)
         all_divs = _detect_all_divs(df_lower, rsi_series)
@@ -486,16 +497,23 @@ def score_setup(
         for dv in all_divs:
             if dv["type"] not in accepted_types:
                 continue
-            if dv["level"] == 2 and dv["bar"] >= n - lb_n2:
+            lvl = dv["level"]
+            if lvl == 1 and dv["bar"] >= n - 6:
+                has_n1 = True
+            elif lvl == 2 and dv["bar"] >= n - 11:
                 has_n2 = True
-            if dv["level"] == 3 and dv["bar"] >= n - lb_n3:
+            elif lvl == 3 and dv["bar"] >= n - 21:
                 has_n3 = True
 
+    div_pts = 0
+    if has_n1:
+        div_pts += 1
     if has_n2:
         div_pts += 1
     if has_n3:
         div_pts += 2
-    div_pts = min(div_pts, 4)
+    # El gate obligatorio ya pasó (N1 o N2 activo), garantizamos ≥1 pt
+    div_pts = max(1, min(div_pts, 4))
     bd["div_pts"] = div_pts
     pts += div_pts
 
