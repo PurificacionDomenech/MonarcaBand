@@ -1002,7 +1002,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         "alert":         alert,
         "day_context":   day_context,
         "week_context":  week_context,
-        "tb_cross":      tb_cross_val,
+        "tb_cross":      False,
     }
 
 
@@ -2008,6 +2008,8 @@ async def get_chart(ticker: str):
         df = calc_trading_band(df)
         ult = float(df["Close"].iloc[-1])
         ts = ts_ms(df.index)
+        max_candles = 200
+        start_i = max(0, len(df) - max_candles)
         candles = [
             {
                 "x": ts[i],
@@ -2016,7 +2018,7 @@ async def get_chart(ticker: str):
                 "l": safe(df["Low"].iloc[i]),
                 "c": safe(df["Close"].iloc[i]),
             }
-            for i in range(len(df))
+            for i in range(start_i, len(df))
         ]
 
         def col_series(col):

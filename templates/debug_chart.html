@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Debug Chart</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>body{background:#000;color:#0f0;font-family:monospace;padding:20px}#status{color:#ff0;margin-bottom:10px}#chart{width:100%;height:500px}</style>
+</head>
+<body>
+<div id="status">Cargando...</div>
+<div id="chart"></div>
+<script>
+async function test(){
+  const status=document.getElementById('status');
+  try{
+    status.textContent='Fetching /api/chart/^DJI...';
+    const r=await fetch('/api/chart/%5EDJI');
+    const d=await r.json();
+    status.textContent='Data received. candles='+d.chart.candles.length+' fvg='+(d.chart.fvg||[]).length;
+
+    const cd=d.chart;
+    const dates=cd.candles.map(c=>new Date(c.x));
+    const closes=cd.candles.map(c=>c.c);
+    const traces=[];
+
+    // Basic line trace only
+    traces.push({x:dates,y:closes,type:'scatter',mode:'lines',name:'Price',line:{color:'#fff',width:1}});
+
+    // FVG horizontal lines (max 3)
+    const fvgs=(cd.fvg||[]).slice(0,3);
+    fvgs.forEach(z=>{
+      const lc=z.direction==='bull'?'rgba(0,255,65,.4)':'rgba(255,0,51,.4)';
+      const d0=dates[0],dN=dates[dates.length-1];
+      traces.push({x:[d0,dN],y:[z.top,z.top],mode:'lines',showlegend:false,line:{color:lc,width:1,dash:'dot'}});
+      traces.push({x:[d0,dN],y:[z.bottom,z.bottom],mode:'lines',showlegend:false,line:{color:lc,width:1,dash:'dot'}});
+    });
+
+    const layout={paper_bgcolor:'#000',plot_bgcolor:'#010601',margin:{t:10,r:50,b:50,l:50},xaxis:{type:'date',gridcolor:'rgba(0,255,65,.1)'},yaxis:{side:'right',gridcolor:'rgba(0,255,65,.1)'}};
+    status.textContent='Calling Plotly.newPlot with '+traces.length+' traces...';
+    Plotly.newPlot('chart',traces,layout,{responsive:true});
+    status.textContent='SUCCESS! Chart rendered with '+traces.length+' traces.';
+  }catch(e){
+    status.textContent='ERROR: '+e.message;
+    status.style.color='#f00';
+    console.error(e);
+  }
+}
+test();
+</script>
+</body>
+</html>
