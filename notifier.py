@@ -390,6 +390,24 @@ async def _supa_patch(path: str, payload: dict) -> bool:
         return False
 
 
+async def _supa_delete(path: str) -> bool:
+    """DELETE rows from Supabase matching the given filter path."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False
+    h = _headers()
+    h["Prefer"] = "return=minimal"
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.delete(f"{SUPABASE_URL}/rest/v1/{path}", headers=h)
+            if r.status_code not in (200, 204):
+                print(f"[notifier] Supabase DELETE {path} → {r.status_code}: {r.text[:300]}")
+                return False
+            return True
+    except Exception as e:
+        print(f"[notifier] Supabase DELETE excepción: {e}")
+        return False
+
+
 # ── Telegram subs (registro via /start) ─────────────────────
 
 async def get_chat_ids() -> list[int]:

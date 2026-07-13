@@ -77,6 +77,9 @@ try:
         send_telegram_to,
         get_user_prefs,
         save_user_prefs,
+        _supa_get,
+        _supa_post,
+        _supa_delete,
     )
 
     HAS_NOTIFIER = True
@@ -1367,6 +1370,9 @@ async def _check_divergences() -> dict:
                 cache_key = f"{t}_{dv['type']}_{dv['level']}_{dv['time']}"
                 if now - _div_cache.get(cache_key, 0) > _DIV_DEDUP_SECONDS:
                     _div_cache[cache_key] = now
+                    asyncio.create_task(
+                        _persist_div_alert(cache_key, t, dv["type"], dv["level"], str(dv["time"]))
+                    )
                     new_divs.append(dv)
 
             if new_divs:
@@ -1376,6 +1382,69 @@ async def _check_divergences() -> dict:
             print(f"[div-check] Error en {t}: {e}")
 
     return divs_by_ticker
+
+
+async def _load_div_cache_from_supabase() -> None:
+    """On startup: pre-populate _div_cache from the last 12 h of div_alerts_sent rows."""
+    if not HAS_NOTIFIER:
+        return
+    try:
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows = await _supa_get(f"div_alerts_sent?sent_at=gte.{cutoff}&select=cache_key,sent_at")
+        loaded = 0
+        for row in rows:
+            key = row.get("cache_key")
+            sent_at_str = row.get("sent_at", "")
+            if not key:
+                continue
+            try:
+                from datetime import timezone
+                ts = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                ts = time.time()
+            _div_cache[key] = ts
+            loaded += 1
+        print(f"[div-dedup] {loaded} entrada(s) cargadas de Supabase al arrancar")
+    except Exception as e:
+        print(f"[div-dedup] Error cargando caché de divergencias desde Supabase: {e}")
+
+
+async def _persist_div_alert(cache_key: str, ticker: str, div_type: str, level: int, div_time: str) -> None:
+    """Persist a sent divergence alert to Supabase so the dedup cache survives restarts."""
+    if not HAS_NOTIFIER:
+        return
+    try:
+        from datetime import datetime
+        sent_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        await _supa_post(
+            "div_alerts_sent",
+            {
+                "cache_key": cache_key,
+                "ticker": ticker,
+                "type": div_type,
+                "level": level,
+                "time": div_time,
+                "sent_at": sent_at,
+            },
+            prefer="resolution=ignore-duplicates",
+        )
+    except Exception as e:
+        print(f"[div-dedup] Error persistiendo alerta en Supabase: {e}")
+
+
+async def _cleanup_div_alerts_sent() -> None:
+    """Delete div_alerts_sent rows older than 24 h to keep the table lean."""
+    if not HAS_NOTIFIER:
+        return
+    try:
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ok = await _supa_delete(f"div_alerts_sent?sent_at=lt.{cutoff}")
+        if ok:
+            print("[div-dedup] Limpieza de div_alerts_sent completada (filas > 24 h eliminadas)")
+    except Exception as e:
+        print(f"[div-dedup] Error en limpieza de div_alerts_sent: {e}")
 
 
 async def _check_setups(tickers: list) -> dict:
@@ -1470,6 +1539,8 @@ async def scheduled_watch():
         await notify_divergences(divs_by_ticker)
     else:
         print("[div-check] Sin divergencias nuevas")
+
+    await _cleanup_div_alerts_sent()
 
     await _update_rsi_watchlist()
 
@@ -1880,6 +1951,8 @@ if HAS_SCHEDULER:
             # Catch-up: enviar alertas de las últimas 24h al arrancar
             asyncio.create_task(daily_catchup())
             asyncio.create_task(_warm_row_cache())
+            # Pre-populate divergence dedup cache from Supabase (survives restarts)
+            asyncio.create_task(_load_div_cache_from_supabase())
         except Exception as e:
             print(f"[scheduler] Error al iniciar: {e}")
         yield
