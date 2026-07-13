@@ -902,6 +902,121 @@ def calc_pattern_hch(df: pd.DataFrame, lookback: int = 60, tol: float = 0.02) ->
     return result
 
 
+# ────────────────────────────────────────────────────────────
+# VACÍOS / FVG (Fair Value Gaps / Imbalances)
+# ────────────────────────────────────────────────────────────
+
+def detect_fvg(df: pd.DataFrame, max_zonas: int = 10, tol_pct: float = 0.001) -> list:
+    """
+    Detecta vacíos (FVG / Imbalance) en el dataframe.
+
+    FVG Alcista  : High[i-2] < Low[i]   →  hueco entre High[i-2] y Low[i]
+    FVG Bajista  : Low[i-2]  > High[i]  →  hueco entre Low[i-2]  y High[i]
+
+    Un FVG se mantiene "activo" hasta que el precio lo cierra por completo:
+      - Alcista: se anula si Close < bottom del FVG
+      - Bajista: se anula si Close > top    del FVG
+
+    Retorna lista de FVG activos ordenados por recencia (más reciente primero).
+    Cada FVG tiene: top, bottom, direction (bull|bear), start_idx, touched.
+    """
+    if len(df) < 5:
+        return []
+
+    high = df["High"]  if "High"  in df.columns else df.get("high",  pd.Series())
+    low  = df["Low"]   if "Low"   in df.columns else df.get("low",   pd.Series())
+    close = df["Close"] if "Close" in df.columns else df.get("close", pd.Series())
+
+    if isinstance(high, pd.DataFrame): high = high.iloc[:, 0]
+    if isinstance(low,  pd.DataFrame): low  = low.iloc[:, 0]
+    if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
+
+    n = len(df)
+    zonas = []   # lista de dicts con estado
+
+    for i in range(2, n):
+        h2 = float(high.iloc[i - 2])
+        l2 = float(low.iloc[i - 2])
+        h0 = float(high.iloc[i])
+        l0 = float(low.iloc[i])
+        c0 = float(close.iloc[i])
+
+        # FVG Alcista: High[i-2] < Low[i]
+        if h2 < l0:
+            top    = l0
+            bottom = h2
+            zonas.append({
+                "top": top, "bottom": bottom,
+                "direction": "bull",
+                "start_idx": i,
+                "touched": False,
+                "frozen": False,
+                "alcanzo_top": False,
+                "alcanzo_bottom": False,
+            })
+
+        # FVG Bajista: Low[i-2] > High[i]
+        if l2 > h0:
+            top    = l2
+            bottom = h0
+            zonas.append({
+                "top": top, "bottom": bottom,
+                "direction": "bear",
+                "start_idx": i,
+                "touched": False,
+                "frozen": False,
+                "alcanzo_top": False,
+                "alcanzo_bottom": False,
+            })
+
+    # ── Mitigar / congelar / borrar zonas según evolución del precio ──
+    # Procesar en orden cronológico desde su creación
+    activas = []
+    for z in zonas:
+        start = z["start_idx"]
+        for j in range(start + 1, n):
+            hj = float(high.iloc[j])
+            lj = float(low.iloc[j])
+            cj = float(close.iloc[j])
+
+            if not z["frozen"]:
+                # Verificar si tocó / atravesó la zona
+                if hj >= z["top"]:
+                    z["alcanzo_top"] = True
+                if lj <= z["bottom"]:
+                    z["alcanzo_bottom"] = True
+
+                atravesada = z["alcanzo_top"] and z["alcanzo_bottom"]
+                if atravesada:
+                    z["touched"] = True
+                    z["frozen"] = True
+                else:
+                    tocada = lj <= z["top"] and hj >= z["bottom"]
+                    if tocada:
+                        z["touched"] = True
+
+            # Si congelada, verificar si se rompe (Close en contra)
+            if z["frozen"]:
+                rota = (z["direction"] == "bull" and cj < z["bottom"]) or \
+                       (z["direction"] == "bear" and cj > z["top"])
+                if rota:
+                    z["invalid"] = True
+                    break
+
+        # Solo mantener zonas no invalidadas
+        if not z.get("invalid"):
+            # Marcar como touched si el precio actual está dentro o tocó
+            curr_h = float(high.iloc[-1])
+            curr_l = float(low.iloc[-1])
+            if curr_l <= z["top"] and curr_h >= z["bottom"]:
+                z["touched"] = True
+            activas.append(z)
+
+    # Limitar a max_zonas más recientes, ordenadas reciente → antiguo
+    activas.sort(key=lambda x: x["start_idx"], reverse=True)
+    return activas[:max_zonas]
+
+
 @router.get("/tickers")
 async def get_tickers():
     return {"tickers": [

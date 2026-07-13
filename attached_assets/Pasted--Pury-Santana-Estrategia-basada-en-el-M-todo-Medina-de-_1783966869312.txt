@@ -1,0 +1,260 @@
+// © Pury Santana - Estrategia basada en el Método Medina de Rafael Medina
+//
+//  Vacio — TradingView — Pine Script v6
+//
+//  TODO EN UN SOLO INDICADOR:
+//    ① HOD/LOD + PDH/PDL
+//    ② Vacios (FVG) — SOLO de la temporalidad del propio grafico
+//    ③ RSI
+//    ④ Nivel 1 Divergencias — Corto
+//    ⑤ Nivel 2 Divergencias — Medio
+//    ⑥ Nivel 3 Divergencias — Largo
+//    ⑦ Visual Divergencias
+//
+//  Los FVG se detectan con las velas del propio grafico que estes viendo
+//  (temporalidad/tipo de barra que tengas abierto).
+//
+//  FVG Alcista = VERDE · FVG Bajista = ROJO (colores configurables)
+//  Al ser TOCADOS (una vela entra en la zona sin cubrirla por completo) el
+//  relleno pasa a un tono mas CLARO, pero la zona SIGUE extendiendose.
+//  Al ser ATRAVESADOS por completo (una vela cubre toda la zona) la zona
+//  deja de extenderse (se congela).
+//  La zona DESAPARECE solo cuando el precio CIERRA en su contra (rompe el
+//  nivel). Si el precio la atraviesa a su FAVOR, la zona se queda como
+//  confirmacion y no se borra.
+//  Div Regular Alcista = Verde · Regular Bajista = Rojo
+//  Div Oculta  Alcista = Cyan  · Oculta  Bajista = Naranja
+// ══════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Vacio", shorttitle = "Vacio", overlay = true, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ① HOD / LOD
+// ════════════════════════════════════════════════════════════════════════
+gHL         = "① HOD / LOD"
+showHodLod  = input.bool(true, "Mostrar HOD/LOD", group = gHL)
+showPrevDay = input.bool(true, "Mostrar Dia Anterior (PDH/PDL)", group = gHL)
+colHOD      = input.color(color.new(#FFD700, 0), "Color HOD", group = gHL)
+colLOD      = input.color(color.new(#00BFFF, 0), "Color LOD", group = gHL)
+colPDH      = input.color(color.new(#DAA520, 0), "Color PDH", group = gHL)
+colPDL      = input.color(color.new(#48D1CC, 0), "Color PDL", group = gHL)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ② Vacios (FVG) — temporalidad del propio grafico
+// ════════════════════════════════════════════════════════════════════════
+gFVG       = "② Vacios (Temporalidad del grafico)"
+showFvg    = input.bool(true, "Activar Vacios", group = gFVG)
+maxZonas   = input.int(10, "Max zonas", minval = 1, maxval = 50, group = gFVG)
+mitigar    = input.bool(true, "Congelar/borrar al tocar-cruzar", group = gFVG)
+colAlcista = input.color(color.new(color.lime, 0), "Color Alcista", group = gFVG)
+colBajista = input.color(color.new(color.red, 0), "Color Bajista", group = gFVG)
+transp     = input.int(0, "Transparencia (0=solido, 100=invisible)", minval = 0, maxval = 100, group = gFVG)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ③ RSI
+// ════════════════════════════════════════════════════════════════════════
+gRSI      = "③ RSI"
+rsiLength = input.int(14, "Longitud RSI", minval = 1, group = gRSI)
+obLevel   = input.int(70, "Nivel Sobrecompra (punto rojo)", minval = 50, maxval = 100, group = gRSI)
+osLevel   = input.int(30, "Nivel Sobreventa (punto verde)", minval = 0, maxval = 50, group = gRSI)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ④ Nivel 1 — Corto
+// ════════════════════════════════════════════════════════════════════════
+g1   = "④ Nivel 1 — Corto"
+lb1L = input.int(5, "Lookback Izquierda", minval = 1, maxval = 100, group = g1)
+lb1R = input.int(5, "Lookback Derecha", minval = 1, maxval = 100, group = g1)
+rn1L = input.int(5, "Min Velas Entre Pivotes", minval = 1, maxval = 100, group = g1)
+rn1U = input.int(50, "Max Velas Entre Pivotes", minval = 1, maxval = 2000, group = g1)
+sh1  = input.bool(true, "Activar Nivel 1", group = g1)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ⑤ Nivel 2 — Medio
+// ════════════════════════════════════════════════════════════════════════
+g2   = "⑤ Nivel 2 — Medio"
+lb2L = input.int(10, "Lookback Izquierda", minval = 1, maxval = 100, group = g2)
+lb2R = input.int(10, "Lookback Derecha", minval = 1, maxval = 100, group = g2)
+rn2L = input.int(10, "Min Velas Entre Pivotes", minval = 1, maxval = 100, group = g2)
+rn2U = input.int(200, "Max Velas Entre Pivotes", minval = 1, maxval = 2000, group = g2)
+sh2  = input.bool(true, "Activar Nivel 2", group = g2)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ⑥ Nivel 3 — Largo
+// ════════════════════════════════════════════════════════════════════════
+g3   = "⑥ Nivel 3 — Largo"
+lb3L = input.int(20, "Lookback Izquierda", minval = 1, maxval = 100, group = g3)
+lb3R = input.int(20, "Lookback Derecha", minval = 1, maxval = 100, group = g3)
+rn3L = input.int(20, "Min Velas Entre Pivotes", minval = 1, maxval = 100, group = g3)
+rn3U = input.int(1000, "Max Velas Entre Pivotes", minval = 1, maxval = 2000, group = g3)
+sh3  = input.bool(true, "Activar Nivel 3", group = g3)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ⑦ Visual Divergencias
+// ════════════════════════════════════════════════════════════════════════
+gV         = "⑦ Visual Divergencias"
+showBull   = input.bool(true, "Mostrar Divergencias Alcistas", group = gV)
+showBear   = input.bool(true, "Mostrar Divergencias Bajistas", group = gV)
+showHidden = input.bool(true, "Mostrar Divergencias Ocultas", group = gV)
+showLabels = input.bool(false, "Mostrar Etiquetas (▲▼)", group = gV)
+showDots   = input.bool(true, "Mostrar Puntos OB/OS", group = gV)
+dotOffset  = input.int(3, "Offset Puntos OB/OS (ticks)", minval = 1, maxval = 20, group = gV)
+
+// ════════════════════════════════════════════════════════════════════════
+//  HELPERS DE COLOR
+// ════════════════════════════════════════════════════════════════════════
+lighten(c, amt) =>
+    r  = color.r(c)
+    g  = color.g(c)
+    b  = color.b(c)
+    nr = int(math.round(r + (255 - r) * amt))
+    ng = int(math.round(g + (255 - g) * amt))
+    nb = int(math.round(b + (255 - b) * amt))
+    color.new(color.rgb(nr, ng, nb), transp)
+
+bullFill      = color.new(colAlcista, transp)
+bearFill      = color.new(colBajista, transp)
+bullFillClaro = lighten(colAlcista, 0.55)
+bearFillClaro = lighten(colBajista, 0.55)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ① HOD/LOD — ESTADO Y DIBUJO
+// ════════════════════════════════════════════════════════════════════════
+var float hodVal = na
+var float lodVal = na
+var float pdhVal = na
+var float pdlVal = na
+
+var line hodLine = na
+var line lodLine = na
+var line pdhLine = na
+var line pdlLine = na
+
+newDay = ta.change(time("D")) != 0
+
+if newDay
+    if not na(hodVal)
+        pdhVal := hodVal
+        pdlVal := lodVal
+    hodVal := high
+    lodVal := low
+else
+    hodVal := math.max(hodVal, high)
+    lodVal := math.min(lodVal, low)
+
+if showHodLod
+    if na(hodLine)
+        hodLine := line.new(bar_index, hodVal, bar_index, hodVal, extend = extend.right, color = colHOD, width = 2)
+        lodLine := line.new(bar_index, lodVal, bar_index, lodVal, extend = extend.right, color = colLOD, width = 2)
+    line.set_xy1(hodLine, bar_index, hodVal)
+    line.set_xy2(hodLine, bar_index + 1, hodVal)
+    line.set_xy1(lodLine, bar_index, lodVal)
+    line.set_xy2(lodLine, bar_index + 1, lodVal)
+
+    if showPrevDay and not na(pdhVal)
+        if na(pdhLine)
+            pdhLine := line.new(bar_index, pdhVal, bar_index, pdhVal, extend = extend.right, color = colPDH, width = 1, style = line.style_dashed)
+            pdlLine := line.new(bar_index, pdlVal, bar_index, pdlVal, extend = extend.right, color = colPDL, width = 1, style = line.style_dashed)
+        line.set_xy1(pdhLine, bar_index, pdhVal)
+        line.set_xy2(pdhLine, bar_index + 1, pdhVal)
+        line.set_xy1(pdlLine, bar_index, pdlVal)
+        line.set_xy2(pdlLine, bar_index + 1, pdlVal)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ② FVG — TIPO Y ESTADO (temporalidad del propio grafico)
+// ════════════════════════════════════════════════════════════════════════
+type Zona
+    float top
+    float bottom
+    int   startBar
+    bool  frozen
+    bool  touched
+    bool  finalDrawn
+    bool  alcanzoTop
+    bool  alcanzoBottom
+    bool  esAlcista
+    box   b
+
+var array<Zona> zonas = array.new<Zona>()
+
+limpiarAntiguas(maxN) =>
+    i = 0
+    while array.size(zonas) >= maxN and i < array.size(zonas)
+        z = array.get(zonas, i)
+        if z.frozen
+            box.delete(z.b)
+            array.remove(zonas, i)
+        else
+            i := i + 1
+    while array.size(zonas) >= maxN
+        z0 = array.get(zonas, 0)
+        box.delete(z0.b)
+        array.remove(zonas, 0)
+
+if showFvg
+    h0 = high
+    h2 = high[2]
+    l0 = low
+    l2 = low[2]
+
+    // FVG Alcista: High[2] < Low[0]
+    if h2 < l0
+        limpiarAntiguas(maxZonas)
+        nb = box.new(left = bar_index, top = l0, right = bar_index, bottom = h2, border_color = color.new(color.black, 100), bgcolor = bullFill, extend = extend.none)
+        array.push(zonas, Zona.new(l0, h2, bar_index, false, false, false, false, false, true, nb))
+
+    // FVG Bajista: Low[2] > High[0]
+    if l2 > h0
+        limpiarAntiguas(maxZonas)
+        nb = box.new(left = bar_index, top = l2, right = bar_index, bottom = h0, border_color = color.new(color.black, 100), bgcolor = bearFill, extend = extend.none)
+        array.push(zonas, Zona.new(l2, h0, bar_index, false, false, false, false, false, false, nb))
+
+    // Procesar lista: extender / aclarar al tocar / congelar / borrar
+    if array.size(zonas) > 0
+        for i = array.size(zonas) - 1 to 0
+            z = array.get(zonas, i)
+            if mitigar
+                if not z.frozen
+                    if high >= z.top
+                        z.alcanzoTop := true
+                    if low <= z.bottom
+                        z.alcanzoBottom := true
+                    atravesada = z.alcanzoTop and z.alcanzoBottom
+                    if atravesada
+                        z.touched := true
+                        z.frozen  := true
+                    else
+                        tocada = low <= z.top and high >= z.bottom
+                        if tocada
+                            z.touched := true
+                if z.frozen
+                    rota = z.esAlcista ? close < z.bottom : close > z.top
+                    if rota
+                        box.delete(z.b)
+                        array.remove(zonas, i)
+                        continue
+
+            fillBase  = z.esAlcista ? bullFill : bearFill
+            fillClaro = z.esAlcista ? bullFillClaro : bearFillClaro
+
+            if z.frozen
+                if not z.finalDrawn
+                    box.set_right(z.b, bar_index)
+                    box.set_bgcolor(z.b, z.touched ? fillClaro : fillBase)
+                    z.finalDrawn := true
+            else
+                box.set_right(z.b, bar_index)
+                box.set_bgcolor(z.b, z.touched ? fillClaro : fillBase)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ③ RSI Y PUNTOS OB/OS
+// ════════════════════════════════════════════════════════════════════════
+rsiVal = ta.rsi(close, rsiLength)
+
+if showDots
+    off = dotOffset * syminfo.mintick
+    if rsiVal >= obLevel
+        label.new(bar_index, high + off, "", style = label.style_circle, color = color.new(color.red, 0), size = size.tiny)
+    if rsiVal <= osLevel
+        label.new(bar_index, low - off, "", style = label.style_circle, color = color.new(#00E676, 0), size = size.tiny)
+
+// ══════════════════════════════════════════════════════════════════

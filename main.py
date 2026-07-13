@@ -21,6 +21,7 @@ try:
         calc_shark_fin as _calc_shark_fin,
         calc_pattern_mw as _calc_pattern_mw,
         calc_pattern_hch as _calc_pattern_hch,
+        detect_fvg as _detect_fvg,
     )
     HAS_TB = True
 except Exception as _tb_err:
@@ -33,6 +34,7 @@ except Exception as _tb_err:
     _calc_shark_fin = None
     _calc_pattern_mw = None
     _calc_pattern_hch = None
+    _detect_fvg = None
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -634,22 +636,19 @@ def detect_alerts(df, ticker="", ema_short=200, ema_long=800, cfg=None):
 
 def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=None):
     """
-    Evalúa las 5 confluencias de la matriz con validación DIRECCIONAL.
+    Evalúa las confluencias principales con validación DIRECCIONAL.
 
-    Regla fundamental: para que el setup sea FAVORABLE, todas las confluencias
-    activas deben apuntar en la MISMA dirección (todas bullish o todas bearish).
-    Si hay conflicto de dirección → el setup es inválido (CONTRADICCIÓN).
+    NUEVO FOCO: RSI, Divergencias, Vacíos (FVG), Patrones, Fibonacci
+    EMAs y MonarcaBand se mantienen en chart pero NO puntúan en confluencias.
 
-    Direcciones de cada confluencia:
-      ① RSI < 47  → bullish (comprar barato, ideal < 30)
-         RSI > 53 → bearish (vender caro, ideal > 70)
-      ② EMA corta > EMA larga → bullish (tendencia alcista)
-         EMA corta < EMA larga → bearish (tendencia bajista)
-      ③ Fractal soporte       → bullish
-         Fractal resistencia   → bearish
-      ④ Apertura día/semana   → bullish si precio arriba de ambas, bearish si abajo
-      ⑤ Fibonacci 55.9%       → neutral (nivel de retroceso, válido para ambas)
-      ⑥ Componentes índice    → bullish/bearish según mayoría (solo ^DJI/^NDX)
+    Direcciones:
+      ① RSI < 47  → bullish  |  RSI > 53 → bearish
+      ② Divergencia RSI activa → bullish/bearish según tipo
+      ③ Vacío FVG activo cerca del precio → bullish/bearish según dirección
+      ④ Patrón M/W/HCH confirmado → bearish/bullish
+      ⑤ Fibonacci 55.9% → neutral
+      ⑥ Apertura día/semana → bullish/bearish
+      ⑦ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
     """
     if len(df) < 14:
         return None
@@ -682,67 +681,70 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 1, "ok": False,
             "texto": f"RSI neutro ({rsi:.1f})", "tipo": "info"})
 
-    # ② Relación entre EMAs (tendencia)
-    if ema_s_val and ema_l_val:
-        if ema_s_val > ema_l_val:
+    # ② Divergencias RSI (3 niveles)
+    div_data = None
+    if _detect_divs is not None and "RSI" in df.columns:
+        rsi_series = df["RSI"]
+        if isinstance(rsi_series, pd.DataFrame): rsi_series = rsi_series.iloc[:, 0]
+        all_divs = _detect_divs(df, rsi_series)
+        recent_divs = [d for d in all_divs if d.get("bar", 0) >= len(df) - 60]
+        if recent_divs:
+            best = recent_divs[0]
+            div_type = best["type"]
+            div_dir = "bullish" if div_type in ("bull", "hbull") else "bearish" if div_type in ("bear", "hbear") else "info"
+            div_data = best
             raw.append({"id": 2, "ok": True,
-                "texto": f"EMA{es} ({ema_s_val:.5g}) > EMA{el} ({ema_l_val:.5g}) — tendencia alcista",
-                "tipo": "bullish"})
-        else:
-            raw.append({"id": 2, "ok": True,
-                "texto": f"EMA{es} ({ema_s_val:.5g}) < EMA{el} ({ema_l_val:.5g}) — tendencia bajista",
-                "tipo": "bearish"})
-    else:
+                "texto": f"Divergencia RSI {div_type.upper()} N{best.get('level',1)} (RSI {best.get('rsi',0):.1f})",
+                "tipo": div_dir})
+    if not div_data:
         raw.append({"id": 2, "ok": False,
-            "texto": "EMAs no disponibles", "tipo": "info"})
+            "texto": "Sin divergencias recientes", "tipo": "info"})
 
-    # ③ Fractal (soporte → bullish, resistencia → bearish)
-    if cfg:
-        fr = calc_fractales(price, cfg)
-        ft = detect_fractal_touch(
-            float(df["High"].iloc[n]), float(df["Low"].iloc[n]), price, fr)
-        if ft["touch"]:
-            tag = "MAYOR" if ft["is_major"] else "menor"
-            if ft["tipo"] == "soporte":
-                raw.append({"id": 3, "ok": True,
-                    "texto": f"Nivel clave {tag} como soporte en {ft['price']:.5g}",
-                    "tipo": "bullish"})
-            else:
-                raw.append({"id": 3, "ok": True,
-                    "texto": f"Nivel clave {tag} como resistencia en {ft['price']:.5g}",
-                    "tipo": "bearish"})
-        else:
-            raw.append({"id": 3, "ok": False,
-                "texto": "Sin nivel clave fractal relevante", "tipo": "info"})
-    else:
+    # ③ Vacíos FVG (Imbalances)
+    fvg_data = None
+    if _detect_fvg is not None:
+        fvgs = _detect_fvg(df, max_zonas=10)
+        for fvg in fvgs:
+            # Si el precio está dentro o muy cerca del FVG (sin romperlo)
+            if fvg.get("touched") and not fvg.get("frozen"):
+                # FVG alcista = zona de soporte (bullish) | FVG bajista = resistencia (bearish)
+                fvg_dir = "bullish" if fvg["direction"] == "bull" else "bearish"
+                fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
+                           f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
+                fvg_data = fvg
+                raw.append({"id": 3, "ok": True, "texto": fvg_text, "tipo": fvg_dir})
+                break
+    if not fvg_data:
         raw.append({"id": 3, "ok": False,
-            "texto": "Sin nivel clave fractal relevante", "tipo": "info"})
+            "texto": "Sin vacíos FVG activos", "tipo": "info"})
 
-    # ③ BIS: MonarcaBand — dirección de tendencia + cruce reciente
-    tb_cross_val = None
-    if "TB_TRIGGER" in df.columns and "TB_AVERAGE" in df.columns:
-        t_val = df["TB_TRIGGER"].iloc[n]
-        a_val = df["TB_AVERAGE"].iloc[n]
-        t_prev = df["TB_TRIGGER"].iloc[n - 1] if n > 0 else None
-        a_prev = df["TB_AVERAGE"].iloc[n - 1] if n > 0 else None
-        if pd.notna(t_val) and pd.notna(a_val) and pd.notna(t_prev) and pd.notna(a_prev):
-            is_bull  = t_val > a_val
-            was_bull = t_prev > a_prev
-            tb_dir   = "bullish" if is_bull else "bearish"
-            if was_bull != is_bull:
-                tb_text = f"⚡ MonarcaBand CAMBIO DE TENDENCIA {'ALCISTA' if is_bull else 'BAJISTA'}"
-                tb_cross_val = 1 if is_bull else -1
-            else:
-                tb_text = f"MonarcaBand {'ALCISTA' if is_bull else 'BAJISTA'} (tendencia activa)"
-            raw.append({"id": 3.5, "ok": True, "texto": tb_text, "tipo": tb_dir})
-        else:
-            raw.append({"id": 3.5, "ok": False,
-                "texto": "MonarcaBand no disponible", "tipo": "info"})
-    else:
-        raw.append({"id": 3.5, "ok": False,
-            "texto": "MonarcaBand no disponible", "tipo": "info"})
+    # ④ Patrones M/W/HCH
+    pattern_data = None
+    if _calc_pattern_mw is not None:
+        pat = _calc_pattern_mw(df)
+        if pat.get("M") and pat["M"].get("estado") in ("confirmado", "formando_p2"):
+            raw.append({"id": 4, "ok": True,
+                "texto": f"Patrón M (doble techo) {pat['M']['estado']}", "tipo": "bearish"})
+            pattern_data = pat["M"]
+        elif pat.get("W") and pat["W"].get("estado") in ("confirmado", "formando_v2"):
+            raw.append({"id": 4, "ok": True,
+                "texto": f"Patrón W (doble suelo) {pat['W']['estado']}", "tipo": "bullish"})
+            pattern_data = pat["W"]
+    if _calc_pattern_hch is not None:
+        hch = _calc_pattern_hch(df)
+        if hch.get("HCH") and hch["HCH"].get("estado") in ("confirmado", "formando_hd"):
+            raw.append({"id": 4, "ok": True,
+                "texto": f"HCH bajista {hch['HCH']['estado']}", "tipo": "bearish"})
+            pattern_data = hch["HCH"]
+        elif hch.get("HCH_inv") and hch["HCH_inv"].get("estado") in ("confirmado", "formando_hd"):
+            raw.append({"id": 4, "ok": True,
+                "texto": f"HCH invertido alcista {hch['HCH_inv']['estado']}", "tipo": "bullish"})
+            pattern_data = hch["HCH_inv"]
+    if not pattern_data:
+        raw.append({"id": 4, "ok": False,
+            "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
 
-    # ④ Precio sobre/bajo apertura del DÍA y SEMANA → dirección real
+    # ⑤ Apertura día/semana
     if opens:
         do = opens.get("day_open")
         wo = opens.get("week_open")
@@ -757,45 +759,44 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             elif price < wo * (1 - tol): week_dir = "below"
 
         if day_dir == "above" and week_dir == "above":
-            raw.append({"id": 4, "ok": True,
+            raw.append({"id": 5, "ok": True,
                 "texto": (f"Precio sobre apertura del día ({do:.5g}) "
                           f"y semana ({wo:.5g}) → sesgo alcista"),
                 "tipo": "bullish"})
         elif day_dir == "below" and week_dir == "below":
-            raw.append({"id": 4, "ok": True,
+            raw.append({"id": 5, "ok": True,
                 "texto": (f"Precio bajo apertura del día ({do:.5g}) "
                           f"y semana ({wo:.5g}) → sesgo bajista"),
                 "tipo": "bearish"})
         elif day_dir and week_dir:
-            raw.append({"id": 4, "ok": False,
+            raw.append({"id": 5, "ok": False,
                 "texto": (f"Apertura día {'↑' if day_dir=='above' else '↓'} "
                           f"vs semana {'↑' if week_dir=='above' else '↓'} — sin consenso"),
                 "tipo": "info"})
         else:
-            raw.append({"id": 4, "ok": False,
+            raw.append({"id": 5, "ok": False,
                 "texto": "Datos de apertura del día/semana incompletos", "tipo": "info"})
     else:
-        raw.append({"id": 4, "ok": False,
+        raw.append({"id": 5, "ok": False,
             "texto": "Datos de apertura no disponibles", "tipo": "info"})
 
-    # ⑤ Fibonacci 55.9% (neutral — nivel de precio, no implica dirección)
-    # Usar rango reciente (últimos 100 range bars / ~5 días) en vez de todo el histórico
+    # ⑥ Fibonacci 55.9% (neutral)
     recent_df = df.tail(100) if len(df) > 100 else df
     high_p = float(recent_df["High"].max())
     low_p  = float(recent_df["Low"].min())
     fib559 = high_p - (high_p - low_p) * 0.559
     tol_f  = (high_p - low_p) * 0.015
     if abs(price - fib559) <= tol_f:
-        raw.append({"id": 5, "ok": True,
+        raw.append({"id": 6, "ok": True,
             "texto": f"Fibonacci 55.9% en {fib559:.5g} (rango {low_p:.5g}–{high_p:.5g})",
             "tipo": "neutral"})
     else:
         pct_dist = (price - fib559) / fib559 * 100
-        raw.append({"id": 5, "ok": False,
+        raw.append({"id": 6, "ok": False,
             "texto": f"Fib 55.9% en {fib559:.5g} ({pct_dist:+.1f}% de distancia)",
             "tipo": "info"})
 
-    # ⑦ Aleta de Tiburón (Shark Fin) — agotamiento extremo post-divergencia
+    # ⑦ Shark Fin
     if _calc_shark_fin is not None:
         shark = _calc_shark_fin(df)
     else:
@@ -866,7 +867,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             "texto": "Sin aleta de tiburón activa", "tipo": "info",
             "pts_extra": 0, "alert_immediate": False})
 
-    # ⑥ Componentes del índice (solo ^DJI y ^NDX) — dirección real
+    # ⑨ Componentes del índice (solo ^DJI y ^NDX) — dirección real
     if components_ctx and components_ctx.get("total", 0) > 0:
         bull_pct  = components_ctx.get("bull_pct", 0)
         bear_pct  = components_ctx.get("bear_pct", 0)
@@ -875,17 +876,17 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         n_bears   = len(components_ctx.get("bears", []))
         total_c   = components_ctx.get("total", 1)
         if comp_dir == "bullish":
-            raw.append({"id": 6, "ok": True,
+            raw.append({"id": 8, "ok": True,
                 "texto": (f"{bull_pct}% de componentes alcistas ({n_bulls}/{total_c}) "
                           f"→ sesgo alcista del índice"),
                 "tipo": "bullish"})
         elif comp_dir == "bearish":
-            raw.append({"id": 6, "ok": True,
+            raw.append({"id": 8, "ok": True,
                 "texto": (f"{bear_pct}% de componentes bajistas ({n_bears}/{total_c}) "
                           f"→ sesgo bajista del índice"),
                 "tipo": "bearish"})
         else:
-            raw.append({"id": 6, "ok": False,
+            raw.append({"id": 8, "ok": False,
                 "texto": f"Componentes mixtos ({bull_pct}% ↑ / {bear_pct}% ↓)",
                 "tipo": "info"})
 
@@ -893,7 +894,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     activas_bullish = [c for c in raw if c["ok"] and c["tipo"] == "bullish"]
     activas_bearish = [c for c in raw if c["ok"] and c["tipo"] == "bearish"]
 
-    FUERTES = {1, 2}
+    FUERTES = {1, 2, 4}   # RSI + Divergencias + Patrones son señales fuertes
     bullish_fuertes = [c for c in activas_bullish if c["id"] in FUERTES]
     bearish_fuertes = [c for c in activas_bearish if c["id"] in FUERTES]
 
@@ -2084,6 +2085,14 @@ async def get_chart(ticker: str):
         except Exception as _pe:
             print(f"[patterns] Error calculando patrones para {sym}: {_pe}")
 
+        # Vacíos FVG para el chart
+        fvg_zonas = _detect_fvg(df, max_zonas=10) if _detect_fvg else []
+        fvg_chart = [
+            {"top": z["top"], "bottom": z["bottom"],
+             "direction": z["direction"], "touched": z.get("touched", False)}
+            for z in fvg_zonas
+        ]
+
         return {
             "chart": {
                 "candles": candles,
@@ -2094,6 +2103,7 @@ async def get_chart(ticker: str):
                 "tb_trigger": tb_trig,
                 "tb_average": tb_avg,
                 "tb_crosses": crosses,
+                "fvg": fvg_chart,
             },
             "tb_last": {
                 "trigger": last_trig,
