@@ -902,6 +902,157 @@ async def notify_users_with_alerts(alerts_by_ticker: dict) -> None:
         print("[notifier] Sin usuarios con notificaciones activas")
 
 
+# ── Alertas de divergencias RSI ──────────────────────────────
+
+_DIV_TYPE_LABELS = {
+    "bull":  ("📈 Divergencia Alcista Regular",  "📈 Regular Bullish Divergence"),
+    "hbull": ("📈 Divergencia Alcista Oculta",   "📈 Hidden Bullish Divergence"),
+    "bear":  ("📉 Divergencia Bajista Regular",  "📉 Regular Bearish Divergence"),
+    "hbear": ("📉 Divergencia Bajista Oculta",   "📉 Hidden Bearish Divergence"),
+}
+
+
+def _build_div_tg_msg(ticker: str, divs: list, now_str: str, lang: str = "es") -> str:
+    name = ASSET_NAMES.get(ticker.upper(), ticker)
+    tv   = _tv_link(ticker, lang)
+
+    if lang == "en":
+        header = f"<b>📊 RSI Divergence · {now_str}</b>"
+        price_lbl = "Price"
+    else:
+        header = f"<b>📊 Divergencia RSI · {now_str}</b>"
+        price_lbl = "Precio"
+
+    lines = [header, "", f"<b>{name}</b>", ""]
+
+    for dv in divs:
+        idx        = 1 if lang == "en" else 0
+        type_label = _DIV_TYPE_LABELS.get(dv["type"], (dv["type"], dv["type"]))[idx]
+        level_lbl  = f"N{dv['level']}"
+        rsi_val    = dv["rsi"]
+        in_zone    = dv.get("in_zone", False)
+
+        if lang == "en":
+            zone_tag = "  ✅ <i>in zone</i>" if in_zone else "  ⬜ <i>out of zone</i>"
+        else:
+            zone_tag = "  ✅ <i>en zona</i>" if in_zone else "  ⬜ <i>fuera de zona</i>"
+
+        lines.append(f"{type_label}  ·  {level_lbl}")
+        lines.append(f"📊 RSI: <code>{rsi_val:.1f}</code>{zone_tag}")
+        lines.append(f"💰 {price_lbl}: <code>{dv['price']:.5g}</code>")
+        lines.append("")
+
+    lines.append(RISK_WARNING_EN if lang == "en" else RISK_WARNING_ES)
+    if tv:
+        lines.append("")
+        lines.append(tv)
+    lines.append("")
+    if lang == "en":
+        lines.append("<i>Automated technical analysis · Not financial advice</i>")
+    else:
+        lines.append("<i>Análisis técnico automatizado · No es asesoría financiera</i>")
+
+    return "\n".join(lines)
+
+
+def _build_div_html(divs_by_ticker: dict, now_str: str) -> str:
+    color_map = {"bull": "#00cc33", "hbull": "#00cc33", "bear": "#ff3333", "hbear": "#ff3333"}
+    rows = ""
+    for ticker, divs in divs_by_ticker.items():
+        name = ASSET_NAMES.get(ticker.upper(), ticker)
+        rows += (
+            f'<tr><td style="padding:8px 10px 4px;font-family:monospace;font-size:12px;'
+            f'color:#00ff41;font-weight:bold;border-top:1px solid #0a1a0a">📊 {name}</td></tr>'
+        )
+        for dv in divs:
+            c         = color_map.get(dv["type"], "#888")
+            lbl_es, _ = _DIV_TYPE_LABELS.get(dv["type"], (dv["type"], dv["type"]))
+            level_lbl = f"N{dv['level']}"
+            in_zone   = "✅ en zona" if dv.get("in_zone") else "⬜ fuera de zona"
+            rows += (
+                f'<tr><td style="padding:3px 10px 3px 20px;border-bottom:1px solid #1a2a1a;'
+                f'color:{c};font-family:monospace;font-size:13px">'
+                f'{lbl_es} · {level_lbl} · RSI {dv["rsi"]:.1f} · {dv["price"]:.5g} · {in_zone}</td></tr>'
+            )
+    risk_row = (
+        '<tr><td style="padding:10px;font-family:monospace;font-size:11px;'
+        'color:#ffaa00;border-top:1px solid #2a2000;background:rgba(255,170,0,0.05);">'
+        '❗️ No arriesgar más de un 1% del balance de tu cuenta en un trade!<br>'
+        '❗️ Don\'t risk more than 1% of the balance of your account in any trade!'
+        '</td></tr>'
+    )
+    return f"""<html><body style="background:#000;padding:20px;">
+      <div style="max-width:600px;margin:auto;background:#010801;border:1px solid #00ff4120;border-radius:8px;overflow:hidden;">
+        <div style="background:#010f01;padding:14px 20px;border-bottom:1px solid #00ff4115;">
+          <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">📊 RSI Divergencias · Trading Band</span>
+          <span style="font-family:monospace;font-size:11px;color:#666;margin-left:10px;">{now_str}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">{rows}{risk_row}</table>
+        <div style="padding:10px 20px;font-size:10px;color:#333;font-family:monospace;border-top:1px solid #00ff4110;text-align:center;">
+          Análisis técnico automatizado · No es asesoría financiera
+        </div>
+      </div></body></html>"""
+
+
+async def notify_divergences(divs_by_ticker: dict) -> None:
+    """
+    Send RSI divergence alerts to all subscribed users.
+    divs_by_ticker: {ticker_upper: [div_dict, ...]}
+    Each div_dict has: type, level, bar, time, rsi, price, in_zone
+    """
+    if not divs_by_ticker:
+        return
+
+    now_str = datetime.now(ZoneInfo('Europe/Madrid')).strftime("%d/%m/%Y %H:%M")
+
+    all_prefs, basic_chat_ids = await asyncio.gather(
+        get_all_user_prefs(),
+        get_chat_ids(),
+    )
+
+    loop = asyncio.get_running_loop()
+    covered_chat_ids: set = set()
+
+    if all_prefs:
+        for prefs in all_prefs:
+            user_tickers = [t.upper() for t in (prefs.get("tickers") or [])]
+            if not user_tickers:
+                user_divs = divs_by_ticker
+            else:
+                user_divs = {t: divs_by_ticker[t] for t in user_tickers if divs_by_ticker.get(t)}
+
+            if not user_divs:
+                continue
+
+            lang = "es"
+
+            if prefs.get("telegram_enabled") and prefs.get("telegram_chat_id"):
+                cid = int(prefs["telegram_chat_id"])
+                covered_chat_ids.add(cid)
+                for tkr, divs in user_divs.items():
+                    msg = _build_div_tg_msg(tkr, divs, now_str, lang)
+                    await send_telegram_to(cid, msg)
+                    await asyncio.sleep(0.3)
+
+            if prefs.get("email_enabled") and prefs.get("email_address"):
+                html = _build_div_html(user_divs, now_str)
+                await loop.run_in_executor(
+                    None, _smtp_send, prefs["email_address"],
+                    f"📊 RSI Divergencia · {now_str}", html
+                )
+
+    if TELEGRAM_TOKEN and basic_chat_ids:
+        for cid in basic_chat_ids:
+            cid_int = int(cid)
+            if cid_int not in covered_chat_ids:
+                for tkr, divs in divs_by_ticker.items():
+                    msg = _build_div_tg_msg(tkr, divs, now_str, "es")
+                    await send_telegram_to(cid_int, msg)
+                    await asyncio.sleep(0.3)
+
+    print(f"[notifier] Divergencias RSI enviadas — {sum(len(v) for v in divs_by_ticker.values())} divergencia(s) en {len(divs_by_ticker)} ticker(s)")
+
+
 # ── Compatibilidad con scheduler existente ───────────────────
 
 async def notify_alertas(alertas: list[dict], source: str = "") -> None:

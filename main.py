@@ -22,6 +22,8 @@ try:
         calc_pattern_mw as _calc_pattern_mw,
         calc_pattern_hch as _calc_pattern_hch,
         detect_fvg as _detect_fvg,
+        detect_all_divergences as _detect_all_divergences,
+        calc_rsi as _calc_rsi,
     )
     HAS_TB = True
 except Exception as _tb_err:
@@ -35,6 +37,8 @@ except Exception as _tb_err:
     _calc_pattern_mw = None
     _calc_pattern_hch = None
     _detect_fvg = None
+    _detect_all_divergences = None
+    _calc_rsi = None
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -57,6 +61,7 @@ try:
     from notifier import (
         notify_alertas,
         notify_users_with_alerts,
+        notify_divergences,
         register_chat,
         send_telegram_to,
         get_user_prefs,
@@ -86,6 +91,9 @@ WATCH_TICKERS = [
 
 _sent_cache: dict = {}
 _DEDUP_SECONDS = 4 * 3600  # 4 horas máximo para alertas recientes
+
+_div_cache: dict = {}
+_DIV_DEDUP_SECONDS = 7 * 24 * 3600
 
 _row_cache: dict = {}
 _ROW_TTL = 60
@@ -1302,6 +1310,59 @@ def _apply_weekend_filter(alerts_by_ticker: dict) -> dict:
     return filtered
 
 
+async def _check_divergences() -> dict:
+    """
+    Checks all WATCH_TICKERS for new RSI divergences (N1 and N2 only).
+    Returns divs_by_ticker: {ticker_upper: [div_dict, ...]} for fresh, unseen divergences.
+    """
+    if not HAS_TB or _detect_all_divergences is None or _calc_rsi is None:
+        return {}
+
+    now = time.time()
+    divs_by_ticker: dict = {}
+
+    for t in WATCH_TICKERS:
+        try:
+            df = await async_download(t.upper(), period="6mo", interval="4h", progress=False)
+            if df.empty:
+                continue
+            df = clean_df(df)
+
+            close = df["Close"]
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+
+            rsi = _calc_rsi(close).dropna()
+            if rsi.empty:
+                continue
+
+            df_aligned = df.loc[rsi.index].copy()
+            df_lower = df_aligned.rename(columns=lambda c: c.lower())
+
+            all_divs = _detect_all_divergences(df_lower, rsi)
+
+            n = len(rsi)
+            new_divs = []
+            for dv in all_divs:
+                if dv["level"] > 2:
+                    continue
+                lb_r = 5 if dv["level"] == 1 else 10
+                if dv["bar"] < n - lb_r - 1:
+                    continue
+                cache_key = f"{t}_{dv['type']}_{dv['level']}_{dv['time']}"
+                if now - _div_cache.get(cache_key, 0) > _DIV_DEDUP_SECONDS:
+                    _div_cache[cache_key] = now
+                    new_divs.append(dv)
+
+            if new_divs:
+                divs_by_ticker[t.upper()] = new_divs
+
+        except Exception as e:
+            print(f"[div-check] Error en {t}: {e}")
+
+    return divs_by_ticker
+
+
 async def scheduled_watch():
     """Revisión periódica — analiza la última vela + confluencias TradingBand."""
     if not HAS_NOTIFIER:
@@ -1333,6 +1394,14 @@ async def scheduled_watch():
         await notify_users_with_alerts(alerts_by_ticker)
     else:
         print("[scheduler] Sin alertas nuevas")
+
+    divs_by_ticker = await _check_divergences()
+    if divs_by_ticker:
+        total_divs = sum(len(v) for v in divs_by_ticker.values())
+        print(f"[div-check] {total_divs} divergencia(s) nueva(s) en {len(divs_by_ticker)} ticker(s)")
+        await notify_divergences(divs_by_ticker)
+    else:
+        print("[div-check] Sin divergencias nuevas")
 
     await _update_rsi_watchlist()
 
