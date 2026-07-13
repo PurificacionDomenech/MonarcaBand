@@ -1,0 +1,113 @@
+ el patrón hay que detectarlo mientras se forma, no cuando ya se completó.
+La M no te sirve cuando ya es M. Te sirve cuando ves el segundo techo formándose y el RSI ya no llega tan alto. Ahí es donde el sistema tiene que avisarte, porque todavía hay tiempo de entrar.
+Vamos a definirlo bien:
+
+DETECCIÓN EN PROGRESO — no cuando está completo
+La M (doble techo)
+El patrón pasa por 4 fases. El aviso útil está en la fase 3.
+Fase 1 — La N
+         El precio sube (primer pico), baja al valle, 
+         y vuelve a subir. Esto es la N. 
+         Aquí no sabemos nada todavía.
+
+Fase 2 — El segundo techo se forma
+         El precio intenta superar el primer pico.
+         RSI en ese segundo intento ya no llega tan alto.
+         AQUÍ el sistema lo detecta: precio ~igual o mayor
+         que el primer pico + RSI más bajo.
+         → AVISO ANTICIPADO: "M en formación"
+
+Fase 3 — El estirón (inducción)
+         El precio rompe brevemente el HOD (el primer pico
+         o el segundo). Los stops de los cortos saltan.
+         RSI se dispara pero no llega al nivel del primer pico.
+         → AVISO PRINCIPAL: "M confirmada + trampa activa"
+
+Fase 4 — La caída
+         Ya es tarde para avisarte. El movimiento empezó.
+El aviso útil es entre Fase 2 y Fase 3. En Fase 4 no sirve de nada.
+
+La W (doble suelo)
+Exactamente al revés.
+Fase 1 — La N invertida
+         El precio baja (primer valle), sube al pico,
+         y vuelve a bajar. Aquí no sabemos nada.
+
+Fase 2 — El segundo suelo se forma
+         El precio intenta hacer nuevo mínimo.
+         RSI en ese segundo intento ya no baja tanto.
+         → AVISO ANTICIPADO: "W en formación"
+
+Fase 3 — El estirón bajista (inducción)
+         El precio rompe brevemente el LOD (el primer valle).
+         Los stops de los largos saltan.
+         RSI se hunde pero no llega al nivel del primer valle.
+         → AVISO PRINCIPAL: "W confirmada + trampa activa"
+
+Fase 4 — La subida
+         Demasiado tarde.
+
+HCH — Hombro Cabeza Hombro
+Este es el más complejo porque tiene tres picos y el alineamiento importa.
+Fase 1 — Hombro izquierdo + cabeza
+         Sube al hombro izq, baja, sube más alto (la cabeza).
+         Todavía no sabemos nada.
+
+Fase 2 — El hombro derecho se está formando
+         El precio baja desde la cabeza y empieza a subir.
+         Si el nuevo pico es MENOR que la cabeza
+         y el RSI en ese pico es MENOR que el RSI 
+         en la cabeza → "HCH en formación"
+         → AVISO ANTICIPADO: "Hombro derecho activo"
+
+Fase 3 — El estirón sobre el hombro derecho
+         El precio intenta superar el hombro derecho.
+         No puede. El RSI no acompaña.
+         Rompe brevemente y vuelve.
+         → AVISO PRINCIPAL: "HCH confirmado + trampa"
+
+Fase 4 — Rompe la línea de cuello
+         Ya es tarde para el mejor entry.
+         Puede servir como confirmación de continuación.
+El HCH invertido funciona igual pero para largos — los tres valles en vez de picos.
+
+CÓMO ENCAJAN EN EL SISTEMA DE PUNTUACIÓN
+Los patrones no reemplazan a los criterios obligatorios. Los refuerzan. Quedarían así:
+Detección de patrón en formación = +2 puntos extra
+Patrón detectadoFasePuntosCondiciónM en formaciónSegundo techo + RSI más bajo+2Precio ≥ 95% del primer techoM + estirón activoTrampa sobre el techo+3Coincide con HOD/PDH barridoW en formaciónSegundo suelo + RSI más alto+2Precio ≤ 105% del primer sueloW + estirón activoTrampa bajo el suelo+3Coincide con LOD/PDL barridoHCH — hombro derecho activoTercer pico menor + RSI menor+2Hombro derecho < cabezaHCH + estirón sobre hombroTrampa sobre hombro derecho+3Coincide con nivel de liquidez
+Cuando el patrón está en fase de estirón activo y coincide con el barrido de liquidez ya tienes los 3 criterios obligatorios cumplidos automáticamente. El patrón Y la trampa son el mismo evento.
+
+REGLA DE ORO PARA ESTOS PATRONES
+La condición que tiene que detectar el algoritmo para el aviso anticipado es siempre la misma en los tres:
+PRECIO hace [máximo / mínimo] similar o ligeramente superior al anterior
+      +
+RSI en ese mismo punto es INFERIOR al RSI del punto anterior equivalente
+      +
+La distancia entre los dos puntos está entre 5 y 40 velas (ni muy pegados ni muy separados)
+Si el precio supera el anterior más de un 1.5%, ya no es un doble techo, es una rotura real. El sistema lo descarta como patrón y lo trata como tendencia.
+
+EL MENSAJE QUE RECIBIRÍAS EN FASE 2 (anticipado)
+⚠️ MATRIX LAB — PATRÓN EN FORMACIÓN
+
+📊 USDJPY  |  1H  |  148.62
+🕐 Martes 10:15 Madrid
+
+M EN FORMACIÓN — vigilar trampa
+
+🔴 Segundo techo detectado: 148.68
+🔴 Primer techo previo:     148.71  (hace 8 velas)
+📉 RSI en segundo techo:    64  vs  72 en el primero
+📉 Divergencia bajista N1 activa
+
+⏳ Esperando:
+   → Estirón sobre HOD (148.71)
+   → Trampa confirmada (cierre bajo HOD)
+   → FVG bajista en zona 148.45 – 148.52
+
+Puntuación actual: 7/15
+Umbral de alerta: 9 pts
+⚡ Si el estirón se confirma → señal automática
+
+❗ No arriesgar más del 1% del balance
+Y cuando el estirón ocurre, llega el segundo mensaje ya con la señal de entrada completa.
+Así tienes dos niveles de aviso: uno para que estés preparado y mirando, y otro para que entres. No te pilla desprevenido pero tampoco te envía la alerta cuando ya pasó todo.
