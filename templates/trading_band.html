@@ -672,8 +672,21 @@ function toggleFilter(key){
   _rsiFilters[key] = !_rsiFilters[key];
   const btn = document.getElementById('rf-'+key);
   if(btn) btn.classList.toggle('active', _rsiFilters[key]);
+  try { localStorage.setItem('rsiFilters', JSON.stringify(_rsiFilters)); } catch(e){}
   if(_rsiData) _drawRsi(_rsiData);
 }
+
+(function _restoreRsiFilters(){
+  try {
+    const saved = JSON.parse(localStorage.getItem('rsiFilters') || 'null');
+    if(!saved) return;
+    Object.keys(_rsiFilters).forEach(k => {
+      if(k in saved) _rsiFilters[k] = saved[k];
+      const btn = document.getElementById('rf-'+k);
+      if(btn) btn.classList.toggle('active', _rsiFilters[k]);
+    });
+  } catch(e){}
+})();
 
 function renderRsi(d){
   const ch = d.chart; if(!ch||!ch.rsi||!ch.rsi.length) return;
