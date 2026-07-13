@@ -1357,9 +1357,9 @@ async def _check_divergences() -> dict:
             n = len(rsi)
             new_divs = []
             for dv in all_divs:
-                if dv["level"] > 2:
+                if dv["level"] > 3:
                     continue
-                lb_r = 5 if dv["level"] == 1 else 10
+                lb_r = 5 if dv["level"] == 1 else 10 if dv["level"] == 2 else 20
                 if dv["bar"] < n - lb_r - 1:
                     continue
                 cache_key = f"{t}_{dv['type']}_{dv['level']}_{dv['time']}"

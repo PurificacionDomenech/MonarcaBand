@@ -279,6 +279,25 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
       </select>
     </div>
 
+    <!-- Niveles de divergencia -->
+    <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(0,255,65,.07)">
+      <div style="font-family:var(--fd);font-size:8px;font-weight:700;letter-spacing:.1em;color:rgba(0,255,65,.3);text-transform:uppercase;margin-bottom:6px">📡 Niveles de Divergencia RSI</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label style="display:flex;align-items:center;gap:7px;cursor:default;font-family:var(--fm);font-size:9px;color:rgba(0,255,65,.5)">
+          <input type="checkbox" id="npDivN1" disabled checked style="accent-color:#00ff41;width:13px;height:13px;opacity:.45">
+          <span>N1 — Divergencias cortas <span style="color:rgba(0,255,65,.3)">(5 velas · siempre activo)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;cursor:default;font-family:var(--fm);font-size:9px;color:rgba(0,255,65,.5)">
+          <input type="checkbox" id="npDivN2" disabled checked style="accent-color:#00ff41;width:13px;height:13px;opacity:.45">
+          <span>N2 — Divergencias medias <span style="color:rgba(0,255,65,.3)">(10 velas · siempre activo)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-family:var(--fm);font-size:9px;color:rgba(0,255,65,.7)">
+          <input type="checkbox" id="npDivN3" onchange="npDirty=true" style="accent-color:#00ff41;width:13px;height:13px;cursor:pointer">
+          <span>N3 — Divergencias largas <span style="color:rgba(0,255,65,.3)">(20 velas · swing trading)</span></span>
+        </label>
+      </div>
+    </div>
+
     <!-- Favoritos + Guardar -->
     <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(0,255,65,.07)">
       <div style="font-family:var(--fd);font-size:8px;font-weight:700;letter-spacing:.1em;color:rgba(0,255,65,.3);text-transform:uppercase;margin-bottom:4px">⭐ Activos vigilados</div>
@@ -1117,6 +1136,9 @@ async function loadNPStatus() {
         const emChk = document.getElementById('npEmailEnabled');
         if(tgChk) tgChk.checked = !!(p.telegram_enabled && p.telegram_chat_id);
         if(emChk) emChk.checked = !!(p.email_enabled && p.email_address);
+        const divLevels = Array.isArray(p.div_levels) ? p.div_levels : [1, 2];
+        const n3Chk = document.getElementById('npDivN3');
+        if(n3Chk) n3Chk.checked = divLevels.includes(3);
         const em = document.getElementById('npMailState');
         if(p.email_address && p.email_enabled){
           em.innerText = `✅ Email activo → ${p.email_address}`;
@@ -1166,6 +1188,8 @@ async function saveNPPrefs() {
 
   const tz = document.getElementById('npTzSelect')?.value || 'UTC';
   localStorage.setItem('matrixlab_tz', tz);
+  const n3On = document.getElementById('npDivN3')?.checked;
+  const divLevels = n3On ? [1, 2, 3] : [1, 2];
   const prefs = {
     telegram_chat_id: tgId ? parseInt(tgId) : null,
     telegram_enabled: !!(tgId && tgOn),
@@ -1173,6 +1197,7 @@ async function saveNPPrefs() {
     email_enabled:    !!(email && emOn),
     tickers:          [...wl],
     timezone:         tz,
+    div_levels:       divLevels,
   };
 
   try {

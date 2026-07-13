@@ -427,6 +427,11 @@ async def get_user_prefs(user_id: str) -> dict:
 
 async def save_user_prefs(user_id: str, prefs: dict) -> bool:
     """Guarda preferencias de notificación del usuario (INSERT o UPDATE según exista)."""
+    raw_levels = prefs.get("div_levels")
+    if isinstance(raw_levels, list) and raw_levels:
+        div_levels = [int(x) for x in raw_levels if str(x).isdigit()]
+    else:
+        div_levels = [1, 2]
     payload = {
         "telegram_chat_id": prefs.get("telegram_chat_id"),
         "telegram_enabled": bool(prefs.get("telegram_enabled", False)),
@@ -434,22 +439,33 @@ async def save_user_prefs(user_id: str, prefs: dict) -> bool:
         "email_enabled":    bool(prefs.get("email_enabled", False)),
         "tickers":          prefs.get("tickers", []),
         "timezone":         prefs.get("timezone", "UTC") or "UTC",
+        "div_levels":       div_levels,
     }
+    async def _try_save(p: dict, is_existing: bool) -> bool:
+        if is_existing:
+            ok = await _supa_patch(f"notification_prefs?user_id=eq.{user_id}", p)
+            if ok:
+                print(f"[notifier] Prefs actualizadas para {user_id[:8]}…")
+            return ok
+        else:
+            q = dict(p)
+            q["user_id"] = user_id
+            ok = await _supa_post("notification_prefs", q, prefer="")
+            if ok:
+                print(f"[notifier] Prefs creadas para {user_id[:8]}…")
+            return ok
+
     # ¿Ya existe el registro?
     existing = await _supa_get(f"notification_prefs?user_id=eq.{user_id}&select=id")
-    if existing:
-        # UPDATE — PATCH con filtro por user_id
-        ok = await _supa_patch(f"notification_prefs?user_id=eq.{user_id}", payload)
-        if ok:
-            print(f"[notifier] Prefs actualizadas para {user_id[:8]}…")
-        return ok
-    else:
-        # INSERT — POST con user_id incluido
-        payload["user_id"] = user_id
-        ok = await _supa_post("notification_prefs", payload, prefer="")
-        if ok:
-            print(f"[notifier] Prefs creadas para {user_id[:8]}…")
-        return ok
+    is_existing = bool(existing)
+
+    ok = await _try_save(payload, is_existing)
+    if not ok and "div_levels" in payload:
+        # Columna div_levels puede no existir aún en Supabase — reintentar sin ella
+        print(f"[notifier] Reintentando guardado sin div_levels para {user_id[:8]}…")
+        fallback = {k: v for k, v in payload.items() if k != "div_levels"}
+        ok = await _try_save(fallback, is_existing)
+    return ok
 
 
 async def get_all_user_prefs() -> list[dict]:
@@ -1013,13 +1029,29 @@ async def notify_divergences(divs_by_ticker: dict) -> None:
     loop = asyncio.get_running_loop()
     covered_chat_ids: set = set()
 
+    def _filter_divs_by_levels(ticker_divs: dict, enabled_levels: list) -> dict:
+        """Keep only divs whose level is in the enabled_levels list."""
+        result = {}
+        for tkr, divs in ticker_divs.items():
+            filtered = [d for d in divs if d.get("level", 1) in enabled_levels]
+            if filtered:
+                result[tkr] = filtered
+        return result
+
     if all_prefs:
         for prefs in all_prefs:
             user_tickers = [t.upper() for t in (prefs.get("tickers") or [])]
             if not user_tickers:
-                user_divs = divs_by_ticker
+                base_divs = divs_by_ticker
             else:
-                user_divs = {t: divs_by_ticker[t] for t in user_tickers if divs_by_ticker.get(t)}
+                base_divs = {t: divs_by_ticker[t] for t in user_tickers if divs_by_ticker.get(t)}
+
+            if not base_divs:
+                continue
+
+            raw_levels = prefs.get("div_levels")
+            enabled_levels = raw_levels if isinstance(raw_levels, list) and raw_levels else [1, 2]
+            user_divs = _filter_divs_by_levels(base_divs, enabled_levels)
 
             if not user_divs:
                 continue
@@ -1042,10 +1074,11 @@ async def notify_divergences(divs_by_ticker: dict) -> None:
                 )
 
     if TELEGRAM_TOKEN and basic_chat_ids:
+        default_divs = _filter_divs_by_levels(divs_by_ticker, [1, 2])
         for cid in basic_chat_ids:
             cid_int = int(cid)
             if cid_int not in covered_chat_ids:
-                for tkr, divs in divs_by_ticker.items():
+                for tkr, divs in default_divs.items():
                     msg = _build_div_tg_msg(tkr, divs, now_str, "es")
                     await send_telegram_to(cid_int, msg)
                     await asyncio.sleep(0.3)
