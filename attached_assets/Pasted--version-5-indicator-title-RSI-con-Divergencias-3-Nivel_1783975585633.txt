@@ -1,0 +1,260 @@
+//@version=5
+indicator(title="RSI con Divergencias — 3 Niveles", shorttitle="RSI Div 3N",
+     format=format.price, precision=2,
+     timeframe="", timeframe_gaps=true)
+
+// ══════════════════════════════════════════════
+// INPUTS RSI
+// ══════════════════════════════════════════════
+rsiLen = input.int(14, minval=1, title="Longitud RSI", group="RSI")
+rsiSrc = input.source(close, "Fuente", group="RSI")
+
+// ══════════════════════════════════════════════
+// NIVEL 1 — Corto (ej: TF 5m detecta divergencias pequeñas)
+// ══════════════════════════════════════════════
+g1 = "Nivel 1 — Corto"
+lb1L = input.int(5,   minval=1, maxval=100,  title="Lookback Izquierda", group=g1)
+lb1R = input.int(6,   minval=1, maxval=100,  title="Lookback Derecha",   group=g1)
+rn1L = input.int(5,   minval=1, maxval=100,  title="Min Velas Entre Pivotes", group=g1)
+rn1U = input.int(50,  minval=1, maxval=2000, title="Max Velas Entre Pivotes", group=g1)
+sh1  = input.bool(true, title="Activar Nivel 1", group=g1)
+
+// ══════════════════════════════════════════════
+// NIVEL 2 — Medio (ej: TF 15m / 1H)
+// ══════════════════════════════════════════════
+g2 = "Nivel 2 — Medio"
+lb2L = input.int(10,  minval=1, maxval=100,  title="Lookback Izquierda", group=g2)
+lb2R = input.int(6,  minval=1, maxval=100,  title="Lookback Derecha",   group=g2)
+rn2L = input.int(10,  minval=1, maxval=100,  title="Min Velas Entre Pivotes", group=g2)
+rn2U = input.int(200, minval=1, maxval=2000, title="Max Velas Entre Pivotes", group=g2)
+sh2  = input.bool(true, title="Activar Nivel 2", group=g2)
+
+// ══════════════════════════════════════════════
+// NIVEL 3 — Largo (ej: 4H / Diario)
+// ══════════════════════════════════════════════
+g3 = "Nivel 3 — Largo"
+lb3L = input.int(20,  minval=1, maxval=100,  title="Lookback Izquierda", group=g3)
+lb3R = input.int(6,  minval=1, maxval=100,  title="Lookback Derecha",   group=g3)
+rn3L = input.int(20,  minval=1, maxval=100,  title="Min Velas Entre Pivotes", group=g3)
+rn3U = input.int(1000,minval=1, maxval=2000, title="Max Velas Entre Pivotes", group=g3)
+sh3  = input.bool(true, title="Activar Nivel 3", group=g3)
+
+// ══════════════════════════════════════════════
+// OPCIONES VISUALES
+// ══════════════════════════════════════════════
+gv = "Visual"
+showBull   = input.bool(true,  title="Mostrar Divergencias Alcistas",  group=gv)
+showBear   = input.bool(true,  title="Mostrar Divergencias Bajistas",  group=gv)
+showHidden = input.bool(true,  title="Mostrar Divergencias Ocultas",   group=gv)
+showLabels = input.bool(false, title="Mostrar Etiquetas",              group=gv)
+
+// ══════════════════════════════════════════════
+// RSI
+// ══════════════════════════════════════════════
+change = ta.change(rsiSrc)
+up     = ta.rma(math.max(change, 0), rsiLen)
+down   = ta.rma(-math.min(change, 0), rsiLen)
+rsi    = down == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down))
+
+// ══════════════════════════════════════════════
+// PLOTS BASE RSI
+// ══════════════════════════════════════════════
+rsiPlot      = plot(rsi, "RSI", color=#7E57C2)
+rsiUpperBand = hline(70, "Banda Superior", color=#787B86)
+midline      = hline(50, "Banda Media",    color=color.new(#787B86,50))
+rsiLowerBand = hline(30, "Banda Inferior", color=#787B86)
+fill(rsiUpperBand, rsiLowerBand, color=color.rgb(126,87,194,90))
+midLinePlot  = plot(50, color=na, editable=false, display=display.none)
+fill(rsiPlot, midLinePlot, 100, 70,
+     top_color=color.new(color.green,0), bottom_color=color.new(color.green,100))
+fill(rsiPlot, midLinePlot, 30, 0,
+     top_color=color.new(color.red,100), bottom_color=color.new(color.red,0))
+
+// ══════════════════════════════════════════════
+// SUAVIZADO MA
+// ══════════════════════════════════════════════
+GRP         = "Suavizado"
+maTypeInput = input.string("Ninguna", "Tipo de Media",
+     options=["Ninguna","SMA","SMA + Bandas Bollinger","EMA","SMMA (RMA)","WMA","VWMA"],
+     group=GRP, display=display.none)
+var isBB    = maTypeInput == "SMA + Bandas Bollinger"
+maLenInput  = input.int(14, "Longitud", group=GRP, display=display.none)
+bbMult      = input.float(2.0, "Desviacion BB", minval=0.001, maxval=50, step=0.5,
+     group=GRP, display=display.none)
+var enableMA = maTypeInput != "Ninguna"
+
+ma(source, length, MAtype) =>
+    switch MAtype
+        "SMA"                    => ta.sma(source, length)
+        "SMA + Bandas Bollinger" => ta.sma(source, length)
+        "EMA"                    => ta.ema(source, length)
+        "SMMA (RMA)"             => ta.rma(source, length)
+        "WMA"                    => ta.wma(source, length)
+        "VWMA"                   => ta.vwma(source, length)
+
+smoothMA    = enableMA ? ma(rsi, maLenInput, maTypeInput) : na
+smoothStDev = isBB ? ta.stdev(rsi, maLenInput) * bbMult : na
+plot(smoothMA, "Media RSI", color=color.yellow,
+     display=enableMA ? display.all : display.none)
+bbUp = plot(smoothMA + smoothStDev, color=color.green,
+     display=isBB ? display.all : display.none)
+bbDn = plot(smoothMA - smoothStDev, color=color.green,
+     display=isBB ? display.all : display.none)
+fill(bbUp, bbDn, color=isBB ? color.new(color.green,90) : na,
+     display=isBB ? display.all : display.none)
+
+// ══════════════════════════════════════════════
+// COLORES
+// ══════════════════════════════════════════════
+noneColor    = color.new(color.white, 100)
+// Nivel 1 — colores sólidos (divergencias cortas)
+bull1Color   = color.new(#00E676, 0)
+bear1Color   = color.new(#FF1744, 0)
+hBull1Color  = color.new(#00BCD4, 0)
+hBear1Color  = color.new(#FF9800, 0)
+// Nivel 2 — colores más suaves
+bull2Color   = color.new(#00E676, 40)
+bear2Color   = color.new(#FF1744, 40)
+hBull2Color  = color.new(#00BCD4, 40)
+hBear2Color  = color.new(#FF9800, 40)
+// Nivel 3 — colores tenues (divergencias largas)
+bull3Color   = color.new(#00E676, 65)
+bear3Color   = color.new(#FF1744, 65)
+hBull3Color  = color.new(#00BCD4, 65)
+hBear3Color  = color.new(#FF9800, 65)
+textColor    = color.white
+
+// ══════════════════════════════════════════════
+// FUNCIÓN DE DIVERGENCIAS — reutilizable
+// ══════════════════════════════════════════════
+_inRange(cond, rL, rU) =>
+    bars = ta.barssince(cond)
+    rL <= bars and bars <= rU
+
+f_divs(lbL, lbR, rL, rU) =>
+    rsiLBR  = rsi[lbR]
+    lowLBR  = low[lbR]
+    highLBR = high[lbR]
+
+    plFound = not na(ta.pivotlow(rsi,  lbL, lbR))
+    phFound = not na(ta.pivothigh(rsi, lbL, lbR))
+
+    // Regular Alcista
+    rsiHL   = rsiLBR > ta.valuewhen(plFound, rsiLBR, 1) and _inRange(plFound[1], rL, rU)
+    priceLL = lowLBR  < ta.valuewhen(plFound, lowLBR, 1)
+    bullC   = plFound and priceLL and rsiHL
+
+    // Regular Bajista
+    rsiLH   = rsiLBR < ta.valuewhen(phFound, rsiLBR, 1) and _inRange(phFound[1], rL, rU)
+    priceHH = highLBR > ta.valuewhen(phFound, highLBR, 1)
+    bearC   = phFound and priceHH and rsiLH
+
+    // Oculta Alcista
+    rsiLL   = rsiLBR < ta.valuewhen(plFound, rsiLBR, 1) and _inRange(plFound[1], rL, rU)
+    priceHL = lowLBR  > ta.valuewhen(plFound, lowLBR, 1)
+    hBullC  = plFound and priceHL and rsiLL
+
+    // Oculta Bajista
+    rsiHH   = rsiLBR > ta.valuewhen(phFound, rsiLBR, 1) and _inRange(phFound[1], rL, rU)
+    priceLH = highLBR < ta.valuewhen(phFound, highLBR, 1)
+    hBearC  = phFound and priceLH and rsiHH
+
+    [rsiLBR, plFound, phFound, bullC, bearC, hBullC, hBearC]
+
+// ══════════════════════════════════════════════
+// CÁLCULO 3 NIVELES
+// ══════════════════════════════════════════════
+[r1, pl1, ph1, bull1, bear1, hBull1, hBear1] = f_divs(lb1L, lb1R, rn1L, rn1U)
+[r2, pl2, ph2, bull2, bear2, hBull2, hBear2] = f_divs(lb2L, lb2R, rn2L, rn2U)
+[r3, pl3, ph3, bull3, bear3, hBull3, hBear3] = f_divs(lb3L, lb3R, rn3L, rn3U)
+
+// ══════════════════════════════════════════════
+// PLOTS NIVEL 1
+// ══════════════════════════════════════════════
+plot(pl1 and sh1 and showBull ? r1 : na, offset=-lb1R,
+     title="[N1] Div Alcista", linewidth=3,
+     color=bull1 ? bull1Color : noneColor, display=display.pane)
+plot(ph1 and sh1 and showBear ? r1 : na, offset=-lb1R,
+     title="[N1] Div Bajista", linewidth=3,
+     color=bear1 ? bear1Color : noneColor, display=display.pane)
+plot(pl1 and sh1 and showHidden ? r1 : na, offset=-lb1R,
+     title="[N1] Div Alcista Oculta", linewidth=2,
+     color=hBull1 ? hBull1Color : noneColor, display=display.pane)
+plot(ph1 and sh1 and showHidden ? r1 : na, offset=-lb1R,
+     title="[N1] Div Bajista Oculta", linewidth=2,
+     color=hBear1 ? hBear1Color : noneColor, display=display.pane)
+
+plotshape(bull1 and sh1 and showBull and showLabels ? r1 : na,
+     offset=-lb1R, text="▲1", style=shape.labelup,
+     location=location.absolute, color=bull1Color,
+     textcolor=textColor, size=size.tiny, display=display.pane)
+plotshape(bear1 and sh1 and showBear and showLabels ? r1 : na,
+     offset=-lb1R, text="▼1", style=shape.labeldown,
+     location=location.absolute, color=bear1Color,
+     textcolor=textColor, size=size.tiny, display=display.pane)
+
+// ══════════════════════════════════════════════
+// PLOTS NIVEL 2
+// ══════════════════════════════════════════════
+plot(pl2 and sh2 and showBull ? r2 : na, offset=-lb2R,
+     title="[N2] Div Alcista", linewidth=2,
+     color=bull2 ? bull2Color : noneColor, display=display.pane)
+plot(ph2 and sh2 and showBear ? r2 : na, offset=-lb2R,
+     title="[N2] Div Bajista", linewidth=2,
+     color=bear2 ? bear2Color : noneColor, display=display.pane)
+plot(pl2 and sh2 and showHidden ? r2 : na, offset=-lb2R,
+     title="[N2] Div Alcista Oculta", linewidth=1,
+     color=hBull2 ? hBull2Color : noneColor, display=display.pane)
+plot(ph2 and sh2 and showHidden ? r2 : na, offset=-lb2R,
+     title="[N2] Div Bajista Oculta", linewidth=1,
+     color=hBear2 ? hBear2Color : noneColor, display=display.pane)
+
+plotshape(bull2 and sh2 and showBull and showLabels ? r2 : na,
+     offset=-lb2R, text="▲2", style=shape.labelup,
+     location=location.absolute, color=bull2Color,
+     textcolor=textColor, size=size.tiny, display=display.pane)
+plotshape(bear2 and sh2 and showBear and showLabels ? r2 : na,
+     offset=-lb2R, text="▼2", style=shape.labeldown,
+     location=location.absolute, color=bear2Color,
+     textcolor=textColor, size=size.tiny, display=display.pane)
+
+// ══════════════════════════════════════════════
+// PLOTS NIVEL 3
+// ══════════════════════════════════════════════
+plot(pl3 and sh3 and showBull ? r3 : na, offset=-lb3R,
+     title="[N3] Div Alcista", linewidth=1,
+     color=bull3 ? bull3Color : noneColor, display=display.pane)
+plot(ph3 and sh3 and showBear ? r3 : na, offset=-lb3R,
+     title="[N3] Div Bajista", linewidth=1,
+     color=bear3 ? bear3Color : noneColor, display=display.pane)
+plot(pl3 and sh3 and showHidden ? r3 : na, offset=-lb3R,
+     title="[N3] Div Alcista Oculta", linewidth=1,
+     color=hBull3 ? hBull3Color : noneColor, display=display.pane)
+plot(ph3 and sh3 and showHidden ? r3 : na, offset=-lb3R,
+     title="[N3] Div Bajista Oculta", linewidth=1,
+     color=hBear3 ? hBear3Color : noneColor, display=display.pane)
+
+plotshape(bull3 and sh3 and showBull and showLabels ? r3 : na,
+     offset=-lb3R, text="▲3", style=shape.labelup,
+     location=location.absolute, color=bull3Color,
+     textcolor=textColor, size=size.tiny, display=display.pane)
+plotshape(bear3 and sh3 and showBear and showLabels ? r3 : na,
+     offset=-lb3R, text="▼3", style=shape.labeldown,
+     location=location.absolute, color=bear3Color,
+     textcolor=textColor, size=size.tiny, display=display.pane)
+
+// ══════════════════════════════════════════════
+// ALERTAS
+// ══════════════════════════════════════════════
+alertcondition(bull1 or bull2 or bull3,
+     title="Div Alcista Regular (cualquier nivel)",
+     message="RSI Div — Alcista Regular en {{ticker}} ({{interval}})")
+alertcondition(bear1 or bear2 or bear3,
+     title="Div Bajista Regular (cualquier nivel)",
+     message="RSI Div — Bajista Regular en {{ticker}} ({{interval}})")
+alertcondition(hBull1 or hBull2 or hBull3,
+     title="Div Alcista Oculta (cualquier nivel)",
+     message="RSI Div — Alcista Oculta en {{ticker}} ({{interval}})")
+alertcondition(hBear1 or hBear2 or hBear3,
+     title="Div Bajista Oculta (cualquier nivel)",
+     message="RSI Div — Bajista Oculta en {{ticker}} ({{interval}})")
