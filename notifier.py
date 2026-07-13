@@ -67,10 +67,6 @@ def _translate_en(msg: str) -> str:
     msg = re.sub(r'Precio cruza (EMA\d+) al alza',  r'Price crosses \1 upward',   msg)
     msg = re.sub(r'Precio cruza (EMA\d+) a la baja', r'Price crosses \1 downward', msg)
     msg = re.sub(r'Precio tocando (EMA\d+)',          r'Price touching \1',          msg)
-    msg = msg.replace('Vela toca fractal MAYOR SOPORTE',     'Candle touches MAJOR fractal SUPPORT')
-    msg = msg.replace('Vela toca fractal MAYOR RESISTENCIA', 'Candle touches MAJOR fractal RESISTANCE')
-    msg = msg.replace('Vela toca fractal SOPORTE',           'Candle touches fractal SUPPORT')
-    msg = msg.replace('Vela toca fractal RESISTENCIA',       'Candle touches fractal RESISTANCE')
     return msg
 
 ASSET_NAMES = {
@@ -187,58 +183,6 @@ def _signal_lines(a: dict, lang: str) -> list[str]:
     nivel = a.get("nivel", "info")
     close = a.get("close")
     lines = []
-
-    if tipo in ("ema_cross_up", "ema_cross_down", "ema_touch"):
-        ema_n = a.get("ema_nombre", "EMA")
-        ema_v = a.get("ema_val")
-        is_800 = "800" in ema_n
-        if lang == "en":
-            if tipo == "ema_cross_up":
-                desc = f"Price breaks above {ema_n}"
-                role = "(key resistance broken)" if is_800 else ""
-            elif tipo == "ema_cross_down":
-                desc = f"Price breaks below {ema_n}"
-                role = "(key support lost)" if is_800 else ""
-            else:
-                desc = f"Price testing {ema_n}"
-                role = "(major support/resistance)" if is_800 else ""
-        else:
-            if tipo == "ema_cross_up":
-                desc = f"Precio supera la {ema_n} al alza"
-                role = "(resistencia clave superada)" if is_800 else ""
-            elif tipo == "ema_cross_down":
-                desc = f"Precio rompe la {ema_n} a la baja"
-                role = "(soporte clave perdido)" if is_800 else ""
-            else:
-                desc = f"Precio testeando la {ema_n}"
-                role = "(soporte/resistencia mayor)" if is_800 else ""
-        ema_str = f"<code>{ema_v:.5g}</code>" if ema_v else ""
-        lines.append(f"📈 {desc} {ema_str} {role}".strip())
-
-    elif tipo in ("golden_cross", "death_cross"):
-        if lang == "en":
-            if tipo == "golden_cross":
-                lines.append("⚡ Golden Cross — bullish EMA crossover")
-            else:
-                lines.append("⚡ Death Cross — bearish EMA crossover")
-        else:
-            if tipo == "golden_cross":
-                lines.append("⚡ Golden Cross — cruce alcista de medias")
-            else:
-                lines.append("⚡ Death Cross — cruce bajista de medias")
-
-    elif tipo == "fractal":
-        f_tipo   = a.get("fractal_tipo", "")
-        f_precio = a.get("fractal_precio")
-        f_mayor  = a.get("fractal_mayor", False)
-        f_str    = f"<code>{f_precio:.5g}</code>" if f_precio else ""
-        mayor_tag = ("MAYOR " if f_mayor else "")
-        if lang == "en":
-            role = "support" if f_tipo == "soporte" else "resistance"
-            lines.append(f"⬡ Candle touches {'major ' if f_mayor else ''}fractal {role.upper()} at {f_str}")
-        else:
-            role = "SOPORTE" if f_tipo == "soporte" else "RESISTENCIA"
-            lines.append(f"⬡ Vela toca fractal {mayor_tag}{role} en {f_str}")
 
     return lines
 
@@ -676,7 +620,7 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     t             = resultado["ticker"]
     name          = ASSET_NAMES.get(t, t)
     precio        = resultado["precio"]
-    rsi           = resultado["rsi"]
+    rsi           = resultado.get("rsi")
     puntos        = resultado["puntos"]
     estado        = resultado["estado"]
     direction     = resultado.get("direction", "info")

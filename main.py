@@ -528,13 +528,14 @@ async def get_index_components_context(ticker: str) -> dict | None:
 
 
 def detect_alerts(df, ticker="", ema_short=200, ema_long=800, cfg=None):
+    """Alertas de vigilancia — FOCO: RSI extremo, Divergencias, FVG, Patrones.
+    EMAs y fractales eliminados del sistema de alertas (quedan en chart visual)."""
     alertas = []
     n = len(df) - 1
     if n < 2:
         return alertas
-    pn, pp = float(df["Close"].iloc[n]), float(df["Close"].iloc[n - 1])
+    pn = float(df["Close"].iloc[n])
     prefix = f"[{ticker}] " if ticker else ""
-    cs, cl = f"EMA{ema_short}", f"EMA{ema_long}"
 
     # RSI actual
     rsi_val = None
@@ -543,91 +544,27 @@ def detect_alerts(df, ticker="", ema_short=200, ema_long=800, cfg=None):
         if pd.notna(r):
             rsi_val = float(r)
 
-    # ── EMA crosses / touches ──────────────────────────────────
-    for col, nombre, pts in [(cs, f"EMA{ema_short}", 2), (cl, f"EMA{ema_long}", 4)]:
-        if col not in df.columns:
-            continue
-        en, ep = df[col].iloc[n], df[col].iloc[n - 1]
-        if not (pd.notna(en) and pd.notna(ep)):
-            continue
-        en_f = float(en)
-        if pp < ep and pn >= en_f:
+    # ── RSI extremo (≤30 o ≥70) ──────────────────────────────
+    if rsi_val is not None:
+        if rsi_val <= 30:
             alertas.append({
                 "nivel": "bullish",
-                "tipo": "ema_cross_up",
-                "ema_nombre": nombre,
-                "ema_val": en_f,
+                "tipo": "rsi_extreme",
                 "close": pn,
                 "rsi": rsi_val,
-                "pts": pts,
-                "msg": prefix + f"Precio cruza {nombre} al alza ${pn:.5g}",
+                "pts": 2,
+                "msg": prefix + f"RSI {rsi_val:.1f} ≤ 30 — zona de sobreventa",
             })
-        elif pp > ep and pn <= en_f:
+        elif rsi_val >= 70:
             alertas.append({
                 "nivel": "bearish",
-                "tipo": "ema_cross_down",
-                "ema_nombre": nombre,
-                "ema_val": en_f,
+                "tipo": "rsi_extreme",
                 "close": pn,
                 "rsi": rsi_val,
-                "pts": pts,
-                "msg": prefix + f"Precio cruza {nombre} a la baja ${pn:.5g}",
-            })
-        elif en_f > 0 and abs(pn - en_f) / en_f * 100 <= 0.4:
-            alertas.append({
-                "nivel": "info",
-                "tipo": "ema_touch",
-                "ema_nombre": nombre,
-                "ema_val": en_f,
-                "close": pn,
-                "rsi": rsi_val,
-                "pts": pts,
-                "msg": prefix + f"Precio tocando {nombre} ${pn:.5g}",
+                "pts": 2,
+                "msg": prefix + f"RSI {rsi_val:.1f} ≥ 70 — zona de sobrecompra",
             })
 
-    # ── Golden / Death Cross ───────────────────────────────────
-    esn = df[cs].iloc[n] if cs in df.columns else None
-    esp = df[cs].iloc[n - 1] if cs in df.columns else None
-    eln = df[cl].iloc[n] if cl in df.columns else None
-    elp = df[cl].iloc[n - 1] if cl in df.columns else None
-    if all(pd.notna(x) for x in [esn, esp, eln, elp] if x is not None):
-        if esp < elp and esn >= eln:
-            alertas.append({
-                "nivel": "bullish",
-                "tipo": "golden_cross",
-                "close": pn,
-                "rsi": rsi_val,
-                "pts": 3,
-                "msg": prefix + f"Golden Cross EMA{ema_short}/{ema_long}",
-            })
-        elif esp > elp and esn <= eln:
-            alertas.append({
-                "nivel": "bearish",
-                "tipo": "death_cross",
-                "close": pn,
-                "rsi": rsi_val,
-                "pts": 3,
-                "msg": prefix + f"Death Cross EMA{ema_short}/{ema_long}",
-            })
-
-    # ── Fractales ─────────────────────────────────────────────
-    if cfg is not None:
-        fr = calc_fractales(pn, cfg)
-        ft = detect_fractal_touch(
-            float(df["High"].iloc[n]), float(df["Low"].iloc[n]), pn, fr
-        )
-        if ft["touch"]:
-            alertas.append({
-                "nivel": "bullish" if ft["tipo"] == "soporte" else "bearish",
-                "tipo": "fractal",
-                "fractal_precio": ft["price"],
-                "fractal_tipo": ft["tipo"],
-                "fractal_mayor": ft["is_major"],
-                "close": pn,
-                "rsi": rsi_val,
-                "pts": 3 if ft["is_major"] else 1,
-                "msg": prefix + f"⬡ Vela toca fractal {'MAYOR ' if ft['is_major'] else ''}{ft['tipo'].upper()} ${ft['price']:.5g}",
-            })
     return alertas
 
 

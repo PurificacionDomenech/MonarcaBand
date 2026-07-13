@@ -95,7 +95,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
 #ind-bar{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .bi{padding:3px 9px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;border:1px solid transparent;font-family:var(--fm);white-space:nowrap;letter-spacing:.04em}
 .bi.off{opacity:.2;filter:grayscale(.8)}
-#plotDiv{min-width:300px;min-height:300px;width:100%;height:min(120vw,580px);border:1px solid rgba(0,255,65,.1)}
+#plotDiv{min-width:300px;min-height:300px;width:100%;height:500px;border:2px solid rgba(0,255,65,.3);background:#010601}
 #rsiWrap{display:block}
 #rsiDiv{width:100%;height:min(30vw,150px)}
 @media(min-width:900px){#plotDiv{height:720px}#rsiDiv{height:170px}}
@@ -396,19 +396,6 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <tbody id="tb"></tbody>
         </table>
       </div>
-      <!-- AVISO LEGAL -->
-        <div style="padding:16px; border-top:1px solid rgba(255,255,255,0.06); margin-top:10px; background:rgba(255,255,255,0.01); border-radius:0 0 14px 14px;">
-          <div style="background:rgba(201,168,76,0.05); border:1px solid rgba(201,168,76,0.2); border-radius:10px; padding:16px; color:#ffffff; font-size:12px; line-height:1.6; text-align:center;">
-            <strong style="color:#e8c96d; display:block; margin-bottom:6px; font-size:13px; text-transform:uppercase; letter-spacing:1px; font-weight:800;">⚠️ Aviso Legal</strong>
-            <span style="display:inline-block; max-width:600px; opacity:0.9;">
-              Trading Band es una herramienta de análisis técnico automatizado. Los datos y alertas mostrados son meramente informativos y representan momentos que identificamos como técnicamente favorables según nuestros algoritmos.
-              <br><br>
-              No somos asesores financieros ni recomendamos inversiones específicas.
-              <br><br>
-              Usted es el único responsable de sus decisiones de inversión y del riesgo asumido. Invertir en mercados financieros conlleva riesgo de pérdida de capital.
-            </span>
-          </div>
-        </div>
     </div>
   </div>
 </div>
@@ -416,7 +403,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" async></script>
 <script>
-window.onerror=function(msg,url,ln,col,err){console.error('GLOBAL ERROR at line '+ln+':',msg);return true;};
+window.onerror=function(msg,url,ln,col,err){console.error('GLOBAL ERROR at line '+ln+':',msg);return false;};
 /* ── PROTECCIÓN DE SESIÓN ── */
 (async function(){
   const SUPABASE_URL='https://fhuijfysfqzjmzadsace.supabase.co';
@@ -529,7 +516,7 @@ window.onload=()=>{
     });
     loadSym('^DJI');
     startW();
-  }catch(e){console.error('ONLOAD ERROR:',e)}
+  }catch(e){}
 };
 
 const fid=t=>'f_'+t.replace(/[^a-z0-9]/gi,'_');
@@ -820,7 +807,7 @@ async function loadSym(s){
     lastData=data;
     document.getElementById('lw').style.display='none';
     {const lbl=document.getElementById('chart-bar-label');if(lbl)lbl.textContent='GRÁFICO 1H';}
-    renderP(data);
+    requestAnimationFrame(()=>renderP(data));
     updateSB(data);renderCA();renderFVG(data);renderPatterns(data);
     if(dbg)dbg.style.background='green';
   }catch(e){clearTimeout(safetyT);document.getElementById('lw').style.display='none';toast('> ERROR: '+e.message,'bearish');if(dbg)dbg.style.background='yellow';}
@@ -917,14 +904,18 @@ function toast(msg,nivel,ms=6000){
 }
 
 function renderP(apiData){
+  const pd=document.getElementById('plotDiv');
+  if(!pd)return;
+  if(typeof Plotly==='undefined'){pd.innerHTML='<div style="color:#0f0;padding:20px">Plotly not loaded</div>';return;}
   const cd=apiData.chart;
-  if(!cd||!cd.candles||!cd.candles.length)return;
+  if(!cd||!cd.candles||!cd.candles.length){pd.innerHTML='<div style="color:#f55;padding:20px">No candles</div>';return;}
+  pd.innerHTML='';
   const dates=cd.candles.map(c=>new Date(c.x));
   const closes=cd.candles.map(c=>c.c);
   const last=closes[closes.length-1]||1;
   const yFmt=last>500?',.0f':last>1?',.2f':',.4f';
-  const traces=[{x:dates,y:closes,type:'scatter',mode:'lines',name:'Precio 1H',line:{color:'rgba(255,255,255,.92)',width:1.8}}];
-  const layout={autosize:true,paper_bgcolor:'#000',plot_bgcolor:'#010601',margin:{t:10,r:70,b:50,l:50},hovermode:'x unified',showlegend:false,xaxis:{type:'date',gridcolor:'rgba(0,255,65,.04)',tickfont:{color:'rgba(0,255,65,.3)',size:9,family:'Share Tech Mono'}},yaxis:{side:'right',tickformat:yFmt,tickfont:{color:'rgba(0,255,65,.3)',size:9,family:'Share Tech Mono'}}};  
+  const traces=[{x:dates,y:closes,type:'scatter',mode:'lines',name:'Precio 1H',line:{color:'#00ff41',width:2}}];
+  const layout={autosize:true,paper_bgcolor:'#050a05',plot_bgcolor:'#0a150a',margin:{t:10,r:70,b:50,l:50},hovermode:'x unified',showlegend:false,xaxis:{type:'date',gridcolor:'rgba(0,255,65,.15)',tickfont:{color:'#00ff41',size:9,family:'Share Tech Mono'}},yaxis:{side:'right',tickformat:yFmt,tickfont:{color:'#00ff41',size:9,family:'Share Tech Mono'}}};  
   const xEnd=dates[dates.length-1];
   const x5d=xEnd?new Date(xEnd.getTime()-5*24*60*60*1000):null;
   const xU=xR||(x5d?[x5d.toISOString(),xEnd.toISOString()]:null);
@@ -938,6 +929,7 @@ function renderP(apiData){
   }
   if(xU){const yr=yRange(xU);if(yr)layout.yaxis.range=yr}
   Plotly.newPlot('plotDiv',traces,layout,{responsive:true,displayModeBar:false});
+  setTimeout(()=>{try{Plotly.Plots.resize('plotDiv');}catch(e){}},100);
 }
 
 function renderPatterns(data){
