@@ -1053,6 +1053,188 @@ async def notify_divergences(divs_by_ticker: dict) -> None:
     print(f"[notifier] Divergencias RSI enviadas — {sum(len(v) for v in divs_by_ticker.values())} divergencia(s) en {len(divs_by_ticker)} ticker(s)")
 
 
+# ── Setup Engine — alertas de alta probabilidad ───────────────
+
+_SETUP_DIR_EMOJI = {"bullish": "🟢", "bearish": "🔴"}
+_SETUP_DIR_ES    = {"bullish": "ALCISTA", "bearish": "BAJISTA"}
+_SETUP_LVL_ES = {
+    "hod": "HOD", "lod": "LOD",
+    "pdh": "PDH", "pdl": "PDL",
+    "wkh": "Máx semana", "wkl": "Mín semana",
+    "mth": "Máx mes",    "mtl": "Mín mes",
+}
+_SETUP_TIER_ES = {"minor": "menor", "medium": "medio", "major": "mayor"}
+
+
+def _fmt_price(p: float) -> str:
+    """Formatea un precio con decimales adecuados."""
+    if p is None:
+        return "—"
+    if p >= 1000:
+        return f"{p:,.0f}"
+    if p >= 10:
+        return f"{p:.2f}"
+    if p >= 1:
+        return f"{p:.4f}"
+    return f"{p:.5f}"
+
+
+def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
+    """
+    Construye el mensaje HTML de Telegram para un setup detectado.
+    nivel_alerta: "normal" → anticipatoria (9-10pts)
+                  "high"   → señal principal (11-12pts)
+                  "urgent" → señal máxima (13-15pts)
+    """
+    nivel     = result.get("nivel_alerta", "normal")
+    direction = result.get("direction", "bullish")
+    puntos    = result.get("puntos", 0)
+    estado    = result.get("estado", "FAVORABLE")
+    sweep     = result.get("sweep", {})
+    divergence= result.get("divergence", {})
+    breakdown = result.get("breakdown", {})
+    fvg       = result.get("fvg")
+    patterns  = result.get("patterns", {})
+    session   = result.get("session_active", False)
+
+    dir_emoji = _SETUP_DIR_EMOJI.get(direction, "⚪")
+    dir_es    = _SETUP_DIR_ES.get(direction, direction.upper())
+
+    # Precio actual (de la divergencia o sweep)
+    price_str = _fmt_price(divergence.get("price") or sweep.get("sweep_high") or sweep.get("level_price"))
+    level_name = _SETUP_LVL_ES.get(sweep.get("level_type", ""), sweep.get("level_type", "").upper())
+    level_px   = _fmt_price(sweep.get("level_price"))
+    tier_es    = _SETUP_TIER_ES.get(sweep.get("level_tier", "minor"), "")
+
+    rsi_val    = divergence.get("rsi")
+    rsi_prev   = divergence.get("rsi_prev")
+    div_level  = divergence.get("level", 1)
+
+    # Header según nivel
+    if nivel == "urgent":
+        header = f"🚨 <b>TRADING BAND — SEÑAL MÁXIMA</b>"
+        sub    = f"🚨 N1+N2+N3 + liquidez {tier_es} — {puntos}/15 pts"
+    elif nivel == "high":
+        header = f"🟢 <b>TRADING BAND — SEÑAL ACTIVA</b>"
+        sub    = f"MUY FAVORABLE — {puntos}/15 pts"
+    else:
+        header = f"⚠️ <b>TRADING BAND — SETUP EN FORMACIÓN</b>"
+        sub    = f"FAVORABLE — {puntos}/15 pts"
+
+    lines = [
+        header,
+        "",
+        f"📊 <b>{ticker}</b>  |  1H  |  {price_str}",
+        f"🕐 {now_str}",
+        "",
+        f"{dir_emoji} <b>SETUP {dir_es} CONFIRMADO</b>",
+        "",
+    ]
+
+    # Divergencia
+    rsi_str = f"RSI {rsi_val:.1f}" if rsi_val else "RSI"
+    if rsi_prev:
+        rsi_str += f" ← {rsi_prev:.1f}"
+    lines.append(f"✅ Divergencia RSI N{div_level} {direction} activa ({rsi_str})")
+    if breakdown.get("div_pts", 0) >= 3:
+        lines.append(f"✅ N2 también activa (+1)")
+    if breakdown.get("div_pts", 0) >= 4:
+        lines.append(f"✅ N3 también activa (+2)")
+
+    # Liquidez + trampa
+    lines.append(f"✅ {level_name} barrido: {level_px} — trampa confirmada ✓ (+{breakdown.get('liq_pts', 1)})")
+
+    # FVG
+    if fvg and breakdown.get("fvg_pts", 0) > 0:
+        fvg_top = _fmt_price(fvg.get("top"))
+        fvg_bot = _fmt_price(fvg.get("bottom"))
+        touched = " (tocado)" if fvg.get("touched") else ""
+        lines.append(f"✅ FVG {direction} activo: {fvg_bot}–{fvg_top}{touched} (+{breakdown['fvg_pts']})")
+
+    # Filtro externo
+    if breakdown.get("filter_pts", 0) > 0:
+        lines.append(f"✅ {breakdown.get('filter_label', 'Filtro externo')} (+{breakdown['filter_pts']})")
+
+    # Sesión
+    if session:
+        lines.append(f"✅ Sesión activa (+1)")
+
+    # Patrones
+    if patterns and breakdown.get("pattern_pts", 0) > 0:
+        pat_name = next(iter(patterns.keys()), "")
+        pat_estado = (patterns.get(pat_name) or {}).get("estado", "")
+        if pat_name and pat_estado:
+            lines.append(f"✅ Patrón {pat_name} — {pat_estado} (+1)")
+
+    lines += [
+        "",
+        f"<b>Puntuación: {puntos}/15 pts — {sub}</b>",
+        "─────────────────────",
+        "⚠️ Gestiona riesgo — máx 1% del balance",
+    ]
+
+    return "\n".join(lines)
+
+
+async def notify_setup_alerts(setups_by_ticker: dict) -> None:
+    """
+    Envía alertas de setup (≥9 pts) a usuarios con Telegram configurado.
+    setups_by_ticker: {ticker -> resultado de evaluate_setup}
+    Subs básicas (sin prefs): solo reciben nivel "high" y "urgent".
+    """
+    if not setups_by_ticker:
+        return
+
+    now_str = datetime.now(ZoneInfo("Europe/Madrid")).strftime("%A %d/%m/%Y %H:%M")
+
+    all_prefs, basic_chat_ids = await asyncio.gather(
+        get_all_user_prefs(),
+        get_chat_ids(),
+    )
+
+    covered_chat_ids: set = set()
+
+    # 1 — Usuarios con preferencias configuradas
+    if all_prefs:
+        for prefs in all_prefs:
+            user_tickers = [t.upper() for t in (prefs.get("tickers") or [])]
+            chat_id = prefs.get("telegram_chat_id")
+            tg_enabled = prefs.get("telegram_enabled", False)
+
+            if not chat_id or not tg_enabled:
+                continue
+
+            cid_int = int(chat_id)
+            covered_chat_ids.add(cid_int)
+
+            for tkr, result in setups_by_ticker.items():
+                if user_tickers and tkr.upper() not in user_tickers:
+                    continue
+                msg = _build_setup_tg_msg(tkr, result, now_str)
+                if TELEGRAM_TOKEN:
+                    await send_telegram_to(cid_int, msg)
+                    await asyncio.sleep(0.3)
+
+    # 2 — Subs básicas (sin prefs): solo high y urgent
+    if TELEGRAM_TOKEN and basic_chat_ids:
+        urgent_setups = {
+            t: r for t, r in setups_by_ticker.items()
+            if r.get("nivel_alerta") in ("high", "urgent")
+        }
+        if urgent_setups:
+            for cid in basic_chat_ids:
+                cid_int = int(cid)
+                if cid_int in covered_chat_ids:
+                    continue
+                for tkr, result in urgent_setups.items():
+                    msg = _build_setup_tg_msg(tkr, result, now_str)
+                    await send_telegram_to(cid_int, msg)
+                    await asyncio.sleep(0.3)
+
+    total = sum(1 for r in setups_by_ticker.values() if r.get("nivel_alerta") != "save")
+    print(f"[notifier] Setup alerts enviados — {total} setup(s) en {len(setups_by_ticker)} ticker(s)")
+
+
 # ── Compatibilidad con scheduler existente ───────────────────
 
 async def notify_alertas(alertas: list[dict], source: str = "") -> None:

@@ -49,6 +49,14 @@ except Exception as _auth_err:
     print(f"[WARN] user_routes no disponible: {_auth_err}")
 
 try:
+    from setup_engine import evaluate_setup as _evaluate_setup
+    HAS_SETUP_ENGINE = True
+except Exception as _se_err:
+    _evaluate_setup = None
+    HAS_SETUP_ENGINE = False
+    print(f"[WARN] setup_engine no disponible: {_se_err}")
+
+try:
     from contextlib import asynccontextmanager
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -62,6 +70,7 @@ try:
         notify_alertas,
         notify_users_with_alerts,
         notify_divergences,
+        notify_setup_alerts,
         register_chat,
         send_telegram_to,
         get_user_prefs,
@@ -104,6 +113,10 @@ _RSI_WATCH_INTERVAL_MIN = 15
 
 # Cache para evitar re-alerta de Shark Fin en la misma fase
 _shark_phase_cache: dict = {}  # ticker -> {"tipo": str, "phase": str, "ts": float}
+
+# Cache para el Setup Engine (3 criterios + scoring)
+_setup_cache: dict = {}
+_SETUP_DEDUP_SECONDS = 4 * 3600  # No repetir el mismo setup en 4h
 
 ASSET_CONFIG = {
     "^DJI": {
@@ -1363,6 +1376,59 @@ async def _check_divergences() -> dict:
     return divs_by_ticker
 
 
+async def _check_setups(tickers: list) -> dict:
+    """
+    Evalúa cada ticker con el Setup Engine (3 criterios obligatorios + scoring 15pts).
+    Devuelve dict: ticker -> resultado (solo si nivel_alerta != "none").
+    """
+    if not HAS_SETUP_ENGINE or _evaluate_setup is None:
+        return {}
+
+    results = {}
+    now_ts = time.time()
+
+    for ticker in tickers:
+        try:
+            df, _ = await async_download_rb(ticker)
+            if df.empty or len(df) < 50:
+                continue
+
+            cfg = get_cfg(ticker)
+            df  = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
+
+            close = df["Close"]
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+
+            from trading_band_routes import calc_rsi as _calc_rsi_tb
+            rsi_series = _calc_rsi_tb(close)
+
+            result = _evaluate_setup(df, rsi_series, ticker, cfg)
+            if result is None:
+                continue
+
+            nivel = result.get("nivel_alerta", "none")
+            if nivel == "none":
+                continue
+
+            direction = result.get("direction", "")
+            estado    = result.get("estado", "")
+            dedup_key = f"SETUP_{ticker.upper()}_{direction}_{estado}"
+
+            if now_ts - _setup_cache.get(dedup_key, 0) < _SETUP_DEDUP_SECONDS:
+                print(f"[setup] {ticker.upper()} — {estado} ya enviado, skip")
+                continue
+
+            _setup_cache[dedup_key] = now_ts
+            results[ticker.upper()] = result
+            print(f"[setup] ✅ {ticker.upper()} — {estado} {result['puntos']}pts ({nivel})")
+
+        except Exception as e:
+            print(f"[setup] Error en {ticker}: {e}")
+
+    return results
+
+
 async def scheduled_watch():
     """Revisión periódica — analiza la última vela + confluencias TradingBand."""
     if not HAS_NOTIFIER:
@@ -1404,6 +1470,19 @@ async def scheduled_watch():
         print("[div-check] Sin divergencias nuevas")
 
     await _update_rsi_watchlist()
+
+    # 4) Setup Engine — 3 criterios obligatorios + scoring 15pts
+    if HAS_SETUP_ENGINE:
+        setup_results = await _check_setups(watch_tickers)
+        if setup_results:
+            save_only = {t: r for t, r in setup_results.items() if r.get("nivel_alerta") == "save"}
+            to_alert  = {t: r for t, r in setup_results.items() if r.get("nivel_alerta") != "save"}
+            if save_only:
+                print(f"[setup] {len(save_only)} setup(s) CONSIDERAR (7-8pts) — guardados sin Telegram")
+            if to_alert and HAS_NOTIFIER:
+                await notify_setup_alerts(to_alert)
+        else:
+            print("[setup] Sin setups activos (no pasaron los 3 criterios)")
 
 
 async def daily_catchup():
