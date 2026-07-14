@@ -1537,16 +1537,11 @@ async def scheduled_watch():
         watch_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
         print("[scheduler] Fin de semana — revisando solo BTC-USD")
 
-    # 1) Alertas de confluencia TradingBand (cruce Trigger/Average + div + nivel)
-    tb_alerts = await _check_tb_confluences(watch_tickers, label="scheduler")
-    if tb_alerts:
-        tb_alerts = _apply_weekend_filter(_filter_expired_alerts(tb_alerts))
-    if tb_alerts:
-        total = sum(len(v) for v in tb_alerts.values())
-        print(f"[scheduler] {total} alertas de TradingBand en {len(tb_alerts)} ticker(s)")
-        await notify_users_with_alerts(tb_alerts)
+    # 1) Alertas del sistema de confluencias actual (EMA/RSI/FVG/patrones/div)
+    # └── TradingBand antiguo eliminado: no se usan Trigger/Average, fractales, ni
+    #     “Precio toca banda Monarca” en las alertas.  
 
-    # 2) Alertas clásicas de confluencias EMA/RSI/fractales
+    # 2) Alertas clásicas de confluencias EMA/RSI/FVG/patrones
     alerts_by_ticker = await _check_tickers(
         watch_tickers, num_candles=1, label="scheduler"
     )
@@ -1595,16 +1590,10 @@ async def daily_catchup():
         catchup_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
         print("[catchup] Fin de semana — revisando solo BTC-USD")
 
-    # 1) Confluencias TradingBand (siempre frescas ≤12h)
-    tb_alerts = await _check_tb_confluences(catchup_tickers, label="catchup")
-    if tb_alerts:
-        tb_alerts = _apply_weekend_filter(_filter_expired_alerts(tb_alerts))
-    if tb_alerts:
-        total = sum(len(v) for v in tb_alerts.values())
-        print(f"[catchup] {total} alertas TradingBand enviadas")
-        await notify_users_with_alerts(tb_alerts)
+    # 1) Sistema TradingBand antiguo DESACTIVADO (no se envían alertas de
+    #    Trigger/Average, fractales, ni “Precio toca banda Monarca”).
 
-    # 2) Alertas clásicas
+    # 2) Alertas del sistema actual
     print("[catchup] Revisando vela 1h actual (máx 1h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
         catchup_tickers, num_candles=1, label="catchup", max_per_ticker=1
@@ -1966,15 +1955,11 @@ if HAS_SCHEDULER:
         try:
             scheduler = AsyncIOScheduler()
             scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
-            from apscheduler.triggers.interval import IntervalTrigger
-            async def _tb_confl_job():
-                await _check_tb_confluences(WATCH_TICKERS)
-            scheduler.add_job(_tb_confl_job,
-                              "interval", minutes=30, id="tb_confl_30m")
+            # Job de TB confluencias (MonarcaBand antiguo) eliminado del scheduler
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
-            print(f"[scheduler] Iniciado · TB confluencias cada 30 min + revisión 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
+            print(f"[scheduler] Iniciado · Revisión cada 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
             # Catch-up: enviar alertas de las últimas 24h al arrancar
             asyncio.create_task(daily_catchup())
             asyncio.create_task(_warm_row_cache())
