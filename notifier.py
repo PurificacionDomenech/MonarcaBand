@@ -577,7 +577,7 @@ def _ref_label(ref_val, bar_high, bar_low, is_high, lang):
 
 def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
     """
-    Muestra referencias: aperturas + HOD/LOD del d\u00eda + PDH/PDL del d\u00eda anterior.
+    Muestra referencias ordenadas por precio (mayor a menor).
     Si la vela de la alerta toc\u00f3 o super\u00f3 alguna referencia, se marca con \u2757 o \ud83d\udd25.
     """
     lines = []
@@ -597,56 +597,75 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
     def dir_arrow(d):
         return chr(0x1F4C8) if d == "above" else (chr(0x1F4C9) if d == "below" else chr(0x2194) + chr(0xFE0F))
 
-    if lang == "en":
-        lines.append("")
-        lines.append(chr(0x1F4CC) + " <b>References:</b>")
-        if day_ctx:
-            do  = day_ctx["open"]
-            pct = day_ctx["pct"]
-            arr = dir_arrow(day_ctx["direction"])
-            lines.append(f"  {arr} Day open: <code>{do:.5g}</code>  <i>{pct:+.2f}%</i>")
-        if week_ctx:
-            wo  = week_ctx["open"]
-            pct = week_ctx["pct"]
-            arr = dir_arrow(week_ctx["direction"])
-            lines.append(f"  {arr} Week open: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
-        if hod is not None:
-            lbl = _ref_label(hod, bar_high, bar_low, True, lang)
-            lines.append(f"  {chr(0x1F4C8)} Day high (HOD): <code>{hod:.5g}</code>{lbl}")
-        if lod is not None:
-            lbl = _ref_label(lod, bar_high, bar_low, False, lang)
-            lines.append(f"  {chr(0x1F4C9)} Day low (LOD): <code>{lod:.5g}</code>{lbl}")
-        if pdh is not None:
-            lbl = _ref_label(pdh, bar_high, bar_low, True, lang)
-            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} Prev day high (PDH): <code>{pdh:.5g}</code>{lbl}")
-        if pdl is not None:
-            lbl = _ref_label(pdl, bar_high, bar_low, False, lang)
-            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} Prev day low (PDL): <code>{pdl:.5g}</code>{lbl}")
-    else:
-        lines.append("")
-        lines.append(chr(0x1F4CC) + " <b>Referencias:</b>")
-        if day_ctx:
-            do  = day_ctx["open"]
-            pct = day_ctx["pct"]
-            arr = dir_arrow(day_ctx["direction"])
-            lines.append(f"  {arr} Apertura d\u00eda: <code>{do:.5g}</code>  <i>{pct:+.2f}%</i>")
-        if week_ctx:
-            wo  = week_ctx["open"]
-            pct = week_ctx["pct"]
-            arr = dir_arrow(week_ctx["direction"])
-            lines.append(f"  {arr} Apertura semana: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
-        if hod is not None:
-            lbl = _ref_label(hod, bar_high, bar_low, True, lang)
-            lines.append(f"  {chr(0x1F4C8)} M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>{lbl}")
-        if lod is not None:
-            lbl = _ref_label(lod, bar_high, bar_low, False, lang)
-            lines.append(f"  {chr(0x1F4C9)} M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>{lbl}")
-        if pdh is not None:
-            lbl = _ref_label(pdh, bar_high, bar_low, True, lang)
-            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} M\u00e1ximo d\u00eda anterior (PDH): <code>{pdh:.5g}</code>{lbl}")
-        if pdl is not None:
-            lbl = _ref_label(pdl, bar_high, bar_low, False, lang)
-            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} M\u00ednimo d\u00eda anterior (PDL): <code>{pdl:.5g}</code>{lbl}")
+    def _rl(ref_val, is_high):
+        if ref_val is None or bar_high is None or bar_low is None:
+            return ""
+        touched  = (bar_high >= ref_val * 0.9995) if is_high else (bar_low <= ref_val * 1.0005)
+        exceeded = (bar_high > ref_val) if is_high else (bar_low < ref_val)
+        if exceeded:
+            return "  " + chr(0x1F525) + (" NEW HIGH" if lang == "en" else " NUEVO M\u00c1XIMO")
+        elif touched:
+            return "  " + chr(0x1F4A5) + (" TOUCHED" if lang == "en" else " TOCADO")
+        return ""
+
+    # Coleccionar referencias como (precio, texto)
+    refs = []
+
+    if day_ctx:
+        do = day_ctx["open"]
+        pct = day_ctx["pct"]
+        arr = dir_arrow(day_ctx["direction"])
+        txt = (f"  {arr} Day open: <code>{do:.5g}</code>  <i>{pct:+.2f}%</i>"
+               if lang == "en" else
+               f"  {arr} Apertura d\u00eda: <code>{do:.5g}</code>  <i>{pct:+.2f}%</i>")
+        refs.append((do, txt))
+
+    if week_ctx:
+        wo = week_ctx["open"]
+        pct = week_ctx["pct"]
+        arr = dir_arrow(week_ctx["direction"])
+        txt = (f"  {arr} Week open: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>"
+               if lang == "en" else
+               f"  {arr} Apertura semana: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
+        refs.append((wo, txt))
+
+    if pdh is not None:
+        lbl = _rl(pdh, True)
+        txt = (f"  {chr(0x2B06) + chr(0xFE0F)} Prev day high (PDH): <code>{pdh:.5g}</code>{lbl}"
+               if lang == "en" else
+               f"  {chr(0x2B06) + chr(0xFE0F)} M\u00e1ximo d\u00eda anterior (PDH): <code>{pdh:.5g}</code>{lbl}")
+        refs.append((pdh, txt))
+
+    if hod is not None:
+        lbl = _rl(hod, True)
+        txt = (f"  {chr(0x1F4C8)} Day high (HOD): <code>{hod:.5g}</code>{lbl}"
+               if lang == "en" else
+               f"  {chr(0x1F4C8)} M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>{lbl}")
+        refs.append((hod, txt))
+
+    if lod is not None:
+        lbl = _rl(lod, False)
+        txt = (f"  {chr(0x1F4C9)} Day low (LOD): <code>{lod:.5g}</code>{lbl}"
+               if lang == "en" else
+               f"  {chr(0x1F4C9)} M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>{lbl}")
+        refs.append((lod, txt))
+
+    if pdl is not None:
+        lbl = _rl(pdl, False)
+        txt = (f"  {chr(0x2B07) + chr(0xFE0F)} Prev day low (PDL): <code>{pdl:.5g}</code>{lbl}"
+               if lang == "en" else
+               f"  {chr(0x2B07) + chr(0xFE0F)} M\u00ednimo d\u00eda anterior (PDL): <code>{pdl:.5g}</code>{lbl}")
+        refs.append((pdl, txt))
+
+    # Ordenar por precio descendente (m\u00e1s alto arriba)
+    refs.sort(key=lambda x: x[0], reverse=True)
+
+    lines.append("")
+    lines.append(chr(0x1F4CC) + (" <b>References (sorted by price):</b>"
+             if lang == "en" else
+             " <b>Referencias ordenadas por precio:</b>"))
+    for _, txt in refs:
+        lines.append(txt)
 
     return lines
 
