@@ -564,25 +564,26 @@ def _build_html(alertas: list[dict], now_str: str) -> str:
 
 def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
     """
-    Muestra los valores numéricos de apertura día/semana/año como referencia.
-    La conclusión direccional ya se incluye en la confluencia ④, por lo que
-    aquí solo se muestran los datos crudos para que el trader los tenga a mano.
+    Muestra referencias: aperturas + HOD/LOD del d\u00eda + PDH/PDL del d\u00eda anterior.
     """
     lines = []
     day_ctx  = resultado.get("day_context")
+    week_ctx = resultado.get("week_context")
     hod      = resultado.get("hod")
     lod      = resultado.get("lod")
-    week_ctx = resultado.get("week_context")
+    pdh      = resultado.get("pdh")
+    pdl      = resultado.get("pdl")
 
-    if not day_ctx and not week_ctx and hod is None and lod is None:
+    has_any = day_ctx or week_ctx or hod is not None or lod is not None or pdh is not None or pdl is not None
+    if not has_any:
         return lines
 
     def dir_arrow(d):
-        return "📈" if d == "above" else ("📉" if d == "below" else "↔️")
+        return chr(0x1F4C8) if d == "above" else (chr(0x1F4C9) if d == "below" else chr(0x2194) + chr(0xFE0F))
 
     if lang == "en":
         lines.append("")
-        lines.append("📌 <b>Reference opens:</b>")
+        lines.append(chr(0x1F4CC) + " <b>References:</b>")
         if day_ctx:
             do  = day_ctx["open"]
             pct = day_ctx["pct"]
@@ -593,23 +594,35 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
             pct = week_ctx["pct"]
             arr = dir_arrow(week_ctx["direction"])
             lines.append(f"  {arr} Week open: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
+        if hod is not None:
+            lines.append(f"  {chr(0x1F4C8)} Day high (HOD): <code>{hod:.5g}</code>")
+        if lod is not None:
+            lines.append(f"  {chr(0x1F4C9)} Day low (LOD): <code>{lod:.5g}</code>")
+        if pdh is not None:
+            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} Prev day high (PDH): <code>{pdh:.5g}</code>")
+        if pdl is not None:
+            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} Prev day low (PDL): <code>{pdl:.5g}</code>")
     else:
         lines.append("")
-        lines.append("📌 <b>Referencias de apertura:</b>")
+        lines.append(chr(0x1F4CC) + " <b>Referencias:</b>")
         if day_ctx:
             do  = day_ctx["open"]
             pct = day_ctx["pct"]
             arr = dir_arrow(day_ctx["direction"])
-            lines.append(f"  {arr} Apertura día: <code>{do:.5g}</code>  <i>{pct:+.2f}%</i>")
+            lines.append(f"  {arr} Apertura d\u00eda: <code>{do:.5g}</code>  <i>{pct:+.2f}%</i>")
         if week_ctx:
             wo  = week_ctx["open"]
             pct = week_ctx["pct"]
             arr = dir_arrow(week_ctx["direction"])
             lines.append(f"  {arr} Apertura semana: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
         if hod is not None:
-            lines.append(f"  \ud83d\udcc8 M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>")
+            lines.append(f"  {chr(0x1F4C8)} M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>")
         if lod is not None:
-            lines.append(f"  \ud83d\udcc9 M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>")
+            lines.append(f"  {chr(0x1F4C9)} M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>")
+        if pdh is not None:
+            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} M\u00e1ximo d\u00eda anterior (PDH): <code>{pdh:.5g}</code>")
+        if pdl is not None:
+            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} M\u00ednimo d\u00eda anterior (PDL): <code>{pdl:.5g}</code>")
 
     return lines
 
@@ -1242,6 +1255,20 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
 
     for sn in session_names:
         out_lines.append(f"✅ Ventana {sn} activa")
+
+    # ── Sesión asiática / europea: ¿tocó máximo o mínimo? ──
+    asia_high  = result.get("asia_high")
+    asia_low   = result.get("asia_low")
+    europe_high = result.get("europe_high")
+    europe_low  = result.get("europe_low")
+    if asia_high and price_now >= asia_high * 0.998:
+        out_lines.append(f"✅ Tocó máximo sesión asiática ({_fmt_price(asia_high)})")
+    if asia_low and price_now <= asia_low * 1.002:
+        out_lines.append(f"✅ Tocó mínimo sesión asiática ({_fmt_price(asia_low)})")
+    if europe_high and price_now >= europe_high * 0.998:
+        out_lines.append(f"✅ Tocó máximo sesión europea ({_fmt_price(europe_high)})")
+    if europe_low and price_now <= europe_low * 1.002:
+        out_lines.append(f"✅ Tocó mínimo sesión europea ({_fmt_price(europe_low)})")
 
     # Lista de lo que falta
     missing = []

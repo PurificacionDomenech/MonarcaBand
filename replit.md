@@ -97,14 +97,15 @@ The system evaluates up to 6 confluences with **directional validation**:
 | ② | Divergencia RSI activa | bullish / bearish según tipo | 1 |
 | ③ | Vacío FVG activo cerca del precio | bullish / bearish según dirección | 1 |
 | ④ | Patrón M/W/HCH confirmado | bearish / bullish | 1 |
-| ⑤ | HOD/LOD del día | cerca de LOD → soporte (bullish) / cerca de HOD → resistencia (bearish) | 1 |
+| ⑤ | HOD/LOD del día | precio a 0.3% del LOD (bullish) o HOD (bearish) | 1 |
 | ⑥ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
 
 **Directional rules:**
-- Strong signals (①②④) determine direction; if they conflict → CONTRADICCIÓN
-- Weak/secondary signals (③⑤) in opposite direction are **descartada** (discarded), not counted
+- Strong signals (①②④⑤) determine direction; if they conflict → CONTRADICCIÓN
+- Weak/secondary signals (③) in opposite direction are **descartada** (discarded), not counted
 - Shark Fin (⑥) only counts when aligned with strong direction; +2 for crossed, +4 for exceeded
 - FAVORABLE: ≥4 points aligned | INTERESANTE: 3 | CONSIDERAR: 2 | NO AHORA: ≤1
+- Alertas indican si la vela tocó máximo/mínimo de la sesión asiática (00-08 UTC) o europea (08-16 UTC)
 
 **Schema `notification_prefs`**: `user_id, telegram_chat_id, telegram_enabled, email_address, email_enabled, tickers, timezone, created_at, id` — NO `language` column.
 

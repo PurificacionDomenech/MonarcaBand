@@ -108,6 +108,12 @@ def detect_liquidity_levels(df: pd.DataFrame) -> dict:
     def _hi(d): return float(d["High"].max()) if not d.empty else None
     def _lo(d): return float(d["Low"].min())  if not d.empty else None
 
+    # ── Sesiones: Asia (00-08 UTC), Europa (08-16 UTC) ───────────
+    # El df_ref tiene índice UTC
+    hrs = idx_ref.hour
+    asia_ref  = df_ref[(hrs >= 0) & (hrs < 8)]
+    europa_ref = df_ref[(hrs >= 8) & (hrs < 16)]
+
     levels = {
         "hod": _hi(today_ref),
         "lod": _lo(today_ref),
@@ -117,6 +123,11 @@ def detect_liquidity_levels(df: pd.DataFrame) -> dict:
         "wkl": _lo(week_ref),
         "mth": _hi(month_ref),
         "mtl": _lo(month_ref),
+        # máx/mín de sesiones para alertas
+        "asia_high":  _hi(asia_ref),
+        "asia_low":   _lo(asia_ref),
+        "europe_high": _hi(europa_ref),
+        "europe_low":  _lo(europa_ref),
     }
     return {k: v for k, v in levels.items() if v is not None}
 
@@ -687,6 +698,12 @@ def score_setup(
         "filter_confirms": filter_confirms,
         "hod":             levels.get("hod"),
         "lod":             levels.get("lod"),
+        "pdh":             levels.get("pdh"),
+        "pdl":             levels.get("pdl"),
+        "asia_high":       levels.get("asia_high"),
+        "asia_low":        levels.get("asia_low"),
+        "europe_high":     levels.get("europe_high"),
+        "europe_low":      levels.get("europe_low"),
     }
 
 

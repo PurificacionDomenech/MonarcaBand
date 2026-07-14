@@ -733,22 +733,29 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 4, "ok": False,
             "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
 
-    # ⑥ HOD/LOD — NO es confluencia; solo referencia de liquidez en setup_engine
-    # ⑦ HOD/LOD — referencia de liquidez (valores reales del día)
+    # ⑤ HOD/LOD — confluencia de soporte/resistencia (0.3% umbral)
+    # Sin depender de `direction` (aún no calculada). El PASO 2 descarta lo que no alinee.
     try:
         day_high = float(df["High"].iloc[-min(24, len(df)):].max()) if len(df) >= 1 else None
         day_low  = float(df["Low"].iloc[-min(24, len(df)):].min())  if len(df) >= 1 else None
         if day_high is not None and day_low is not None:
-            raw.append({"id": 5, "ok": True,
-                "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
+            near_lod = price <= day_low * 1.003
+            near_hod = price >= day_high * 0.997
+            if near_lod:
+                raw.append({"id": 5, "ok": True,
+                    "texto": f"LOD {day_low:.4g} — precio tocando soporte", "tipo": "bullish"})
+            if near_hod:
+                raw.append({"id": 5, "ok": True,
+                    "texto": f"HOD {day_high:.4g} — precio tocando resistencia", "tipo": "bearish"})
+            if not near_lod and not near_hod:
+                raw.append({"id": 5, "ok": False,
+                    "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
         else:
             raw.append({"id": 5, "ok": False,
                 "texto": "HOD/LOD no disponible", "tipo": "info"})
     except Exception:
         raw.append({"id": 5, "ok": False,
             "texto": "HOD/LOD no disponible", "tipo": "info"})
-
-    # ⑦ Fibonacci 55.9% — ELIMINADO (no se muestra)
 
     # ⑦ Shark Fin
     if _calc_shark_fin is not None:
