@@ -1269,6 +1269,16 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
         "",
     ]
 
+    # Referencias del dia (HOD/LOD)
+    if result.get("hod") or result.get("lod"):
+        ref_parts = []
+        if result.get("hod"):
+            ref_parts.append(f"HOD: {_fmt_price(result['hod'])}")
+        if result.get("lod"):
+            ref_parts.append(f"LOD: {_fmt_price(result['lod'])}")
+        out_lines.append(f"\ud83d\udcca Referencias del dia: {'  |  '.join(ref_parts)}")
+        out_lines.append("")
+
     # SL/TP
     if sl and tp:
         sl_str = _fmt_price(sl)

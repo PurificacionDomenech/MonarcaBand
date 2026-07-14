@@ -2144,7 +2144,7 @@ async def get_chart(ticker: str):
         df = calc_trading_band(df)
         ult = float(df["Close"].iloc[-1])
         ts = ts_ms(df.index)
-        max_candles = 200
+        max_candles = 700
         start_i = max(0, len(df) - max_candles)
         candles = [
             {

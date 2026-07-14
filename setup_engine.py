@@ -685,6 +685,8 @@ def score_setup(
         "tp":              tp,
         "price":           price_now,
         "filter_confirms": filter_confirms,
+        "hod":             levels.get("hod"),
+        "lod":             levels.get("lod"),
     }
 
 
@@ -730,7 +732,7 @@ def _calc_sl_tp(
         elif atr > 0:
             sl = price - atr
         # TP: HOD del día o 2x ATR
-        hod = levels.get("HOD")
+        hod = levels.get("hod")
         if hod and hod > price:
             tp = hod
         elif atr > 0:
@@ -741,7 +743,7 @@ def _calc_sl_tp(
         elif atr > 0:
             sl = price + atr
         # TP: LOD del día o 2x ATR
-        lod = levels.get("LOD")
+        lod = levels.get("lod")
         if lod and lod < price:
             tp = lod
         elif atr > 0:
