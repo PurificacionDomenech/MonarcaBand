@@ -1217,8 +1217,15 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
         fvg_bot = _fmt_price(fvg.get("bottom"))
         lines.append(f"✅ FVG {direction} activo {fvg_bot} – {fvg_top}")
 
-    if breakdown.get("filter_pts", 0) > 0:
-        lines.append(f"✅ {breakdown.get('filter_label', 'Filtro externo')}")
+    filter_confirms = result.get("filter_confirms")
+    filter_label    = breakdown.get("filter_label", "")
+    if filter_label:
+        if filter_confirms is True:
+            lines.append(f"✅ {filter_label}")
+        elif filter_confirms is False:
+            lines.append(f"❌ {filter_label}")
+        else:
+            lines.append(f"◻️ {filter_label}")
 
     if patterns and breakdown.get("pattern_pts", 0) > 0:
         lines.append(f"✅ {pat_name} en {pat_estado} — precio pivote {level_px}")

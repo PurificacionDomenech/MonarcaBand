@@ -356,46 +356,66 @@ def _get_vix_value() -> float | None:
         return None
 
 
-def _score_external_filter(ticker: str, direction: str) -> tuple[int, str]:
+def _score_external_filter(ticker: str, direction: str) -> tuple[int, str, bool | None]:
     """
-    Devuelve (puntos, descripción) del filtro externo DXY o VIX.
+    Devuelve (puntos, descripción, confirma) del filtro externo DXY o VIX.
     0 puntos si no aplica o no confirma. 2 puntos si confirma.
+    confirma = True (confirma), False (contradice), None (no aplica/fallo).
     """
     t = ticker.upper()
 
     if t in _USD_QUOTE:
         dxy = _get_dxy_direction()
         if dxy is None:
-            return 0, ""
+            return 0, "DXI: datos no disponibles", None
+        # EURUSD, GBPUSD, AUDUSD: DXY sube → par baja (bearish), DXY baja → par sube (bullish)
         confirms = (direction == "bearish" and dxy == "rising") or \
                    (direction == "bullish" and dxy == "falling")
+        opuesto  = (direction == "bullish" and dxy == "rising") or \
+                   (direction == "bearish" and dxy == "falling")
         if confirms:
-            label = f"DXI divergencia bajista confirmada" if direction == "bullish" else f"DXI divergencia alcista confirmada"
-            return 2, label
-        return 0, ""
+            label = f"DXI confirmado ({dxy.upper()}) — REFUERZA {direction}"
+            return 2, label, True
+        elif opuesto:
+            label = f"DXI CONTRADICE ({dxy.upper()}) — NO ENTRAR"
+            return 0, label, False
+        return 0, "DXI neutral", None
 
     if t in _USD_BASE:
         dxy = _get_dxy_direction()
         if dxy is None:
-            return 0, ""
+            return 0, "DXI: datos no disponibles", None
+        # USDJPY: DXY sube → par sube (bullish), DXY baja → par baja (bearish)
         confirms = (direction == "bullish" and dxy == "rising") or \
                    (direction == "bearish" and dxy == "falling")
+        opuesto  = (direction == "bearish" and dxy == "rising") or \
+                   (direction == "bullish" and dxy == "falling")
         if confirms:
-            label = f"DXI divergencia alcista confirmada" if direction == "bullish" else f"DXI divergencia bajista confirmada"
-            return 2, label
-        return 0, ""
+            label = f"DXI confirmado ({dxy.upper()}) — REFUERZA {direction}"
+            return 2, label, True
+        elif opuesto:
+            label = f"DXI CONTRADICE ({dxy.upper()}) — NO ENTRAR"
+            return 0, label, False
+        return 0, "DXI neutral", None
 
     if t in _INDICES:
         vix = _get_vix_value()
         if vix is None:
-            return 0, ""
+            return 0, "VIX: datos no disponibles", None
+        # Índices: VIX alto → mercado baja (bearish), VIX bajo → mercado sube (bullish)
         confirms = (direction == "bearish" and vix > 20) or \
                    (direction == "bullish" and vix < 15)
+        opuesto  = (direction == "bullish" and vix > 20) or \
+                   (direction == "bearish" and vix < 15)
         if confirms:
-            return 2, f"VIX {vix:.1f} confirma"
-        return 0, ""
+            label = f"VIX {vix:.1f} confirma {direction} — REFUERZA"
+            return 2, label, True
+        elif opuesto:
+            label = f"VIX {vix:.1f} CONTRADICE {direction} — NO ENTRAR"
+            return 0, label, False
+        return 0, f"VIX {vix:.1f} neutral", None
 
-    return 0, ""
+    return 0, "", None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -610,9 +630,10 @@ def score_setup(
     pts += fvg_pts
 
     # ── Filtro DXY/VIX ───────────────────────────────────────────
-    filter_pts, filter_label = _score_external_filter(ticker, direction)
-    bd["filter_pts"]  = filter_pts
-    bd["filter_label"] = filter_label
+    filter_pts, filter_label, filter_confirms = _score_external_filter(ticker, direction)
+    bd["filter_pts"]     = filter_pts
+    bd["filter_label"]    = filter_label
+    bd["filter_confirms"] = filter_confirms
     pts += filter_pts
 
     # ── Sesión ───────────────────────────────────────────────────
@@ -647,22 +668,23 @@ def score_setup(
     sl, tp    = _calc_sl_tp(price_now, direction, atr, sweep, levels)
 
     return {
-        "puntos":         pts,
-        "estado":         estado,
-        "nivel_alerta":   nivel,
-        "direction":      direction,
-        "breakdown":      bd,
-        "fvg":            fvg_info,
-        "patterns":       pattern_info,
-        "levels":         levels,
-        "sweep":          sweep,
-        "divergence":     divergence,
-        "session_pts":    session_pts,
-        "session_names":  session_names,
-        "ticker":         ticker.upper(),
-        "sl":             sl,
-        "tp":             tp,
-        "price":          price_now,
+        "puntos":          pts,
+        "estado":          estado,
+        "nivel_alerta":    nivel,
+        "direction":       direction,
+        "breakdown":       bd,
+        "fvg":             fvg_info,
+        "patterns":        pattern_info,
+        "levels":          levels,
+        "sweep":           sweep,
+        "divergence":      divergence,
+        "session_pts":     session_pts,
+        "session_names":   session_names,
+        "ticker":          ticker.upper(),
+        "sl":              sl,
+        "tp":              tp,
+        "price":           price_now,
+        "filter_confirms": filter_confirms,
     }
 
 
