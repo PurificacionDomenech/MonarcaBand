@@ -1,0 +1,92 @@
+Estructura exacta del mensaje a enviar:
+
+[EMOJI_ESTADO] MATRIX LAB — [ESTADO]
+
+📊 [ACTIVO]  |  1H  |  [PRECIO_ACTUAL]
+🕐 [DÍA] [HORA] [TIMEZONE]
+
+[LARGO/CORTO] — [DESCRIPCIÓN SETUP]
+
+[LISTA DE CONFLUENCIAS ACTIVAS con ✅]
+[LISTA DE LO QUE FALTA con ◻️]
+
+[PATRÓN DETECTADO si aplica]
+
+⚡ Puntuación: [X]/18 pts
+[BARRA VISUAL: ████████░░ 8/10]
+
+SL sugerido: [PRECIO] ([REFERENCIA])
+TP sugerido: [PRECIO] (ratio [X:X])
+
+❗ No arriesgar más del 1% del balance
+──────────────────────────────────────
+Análisis técnico automatizado
+No es asesoría financiera
+
+Donde EMOJI_ESTADO es:
+  🟡 para 9-10 pts
+  🟢 para 11-12 pts
+  🚨 para 13-15 pts
+  🚨🚨 para 16-18 pts
+
+Donde ESTADO es:
+  FAVORABLE        (9-10 pts)
+  MUY FAVORABLE    (11-12 pts)
+  SEÑAL MÁXIMA     (13-15 pts)
+  CONFLUENCIA TOTAL (16-18 pts)
+
+════════════════════════════════════════════════════════
+PARTE 6 — EJEMPLO DE MENSAJE COMPLETO
+════════════════════════════════════════════════════════
+
+🟢 MATRIX LAB — MUY FAVORABLE
+
+📊 EURUSD  |  1H  |  1.0858
+🕐 Martes 10:28 Madrid
+
+📈 LARGO — W en formación + trampa sobre LOD
+
+✅ Divergencia RSI alcista N1 activa (RSI 34 vs 26)
+✅ Divergencia RSI alcista N2 activa (+1)
+✅ LOD barrido hace 2 velas (1.0841)
+✅ Trampa confirmada — cerró sobre LOD
+✅ FVG alcista activo 1.0848 – 1.0855
+✅ DXI divergencia bajista confirmada
+✅ W en formación — segundo suelo 1.0843
+   (RSI segundo suelo 34 > RSI primer suelo 26 ✓)
+✅ Ventana Londres activa (10:28)
+◻️ N3 no activo
+◻️ PDL no barrido
+
+⚡ Puntuación: 12/18 pts
+████████████░░░░░░ 12/18
+
+SL sugerido: 1.0838 (bajo el mínimo del estirón)
+TP sugerido: 1.0892 (HOD / ratio 1:2.8)
+
+❗ No arriesgar más del 1% del balance
+──────────────────────────────────────
+Análisis técnico automatizado
+No es asesoría financiera
+
+════════════════════════════════════════════════════════
+PARTE 7 — AVISO ANTICIPADO (patrón en formación)
+════════════════════════════════════════════════════════
+
+Si se detecta patrón M, W o HCH en formación pero aún
+no se activaron los 3 filtros duros, enviar este aviso
+previo SOLO si la puntuación parcial es ≥ 6 pts:
+
+⏳ MATRIX LAB — PATRÓN EN VIGILANCIA
+
+📊 [ACTIVO]  |  1H  |  [PRECIO]
+🕐 [DÍA] [HORA]
+
+⚠️ [PATRÓN] EN FORMACIÓN — esperando trampa
+
+[DESCRIPCIÓN del patrón: precios y RSI de ambos puntos]
+
+Esperando para activar alerta:
+→ Estirón sobre [NIVEL] ([PRECIO])
+→ Cierre de vuelta confirmado
+→ FVG en zona [RANGO]

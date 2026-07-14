@@ -601,7 +601,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     """
     Evalúa las confluencias principales con validación DIRECCIONAL.
 
-    NUEVO FOCO: RSI, Divergencias, Vacíos (FVG), Patrones, Fibonacci
+    NUEVO FOCO: RSI, Divergencias, Vacíos (FVG), Patrones, HOD/LOD
     EMAs y MonarcaBand se mantienen en chart pero NO puntúan en confluencias.
 
     Direcciones:
@@ -609,8 +609,8 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
       ② Divergencia RSI activa → bullish/bearish según tipo
       ③ Vacío FVG activo cerca del precio → bullish/bearish según dirección
       ④ Patrón M/W/HCH confirmado → bearish/bullish
-      ⑤ Fibonacci 55.9% → neutral
-      ⑥ Apertura día/semana → bullish/bearish
+      ⑤ HOD/LOD del día → soporte/resistencia
+      ⑥ (reservado)
       ⑦ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
     """
     if len(df) < 14:
@@ -734,57 +734,43 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 4, "ok": False,
             "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
 
-    # ⑤ Apertura día/semana
-    if opens:
-        do = opens.get("day_open")
-        wo = opens.get("week_open")
-        tol = 0.0005
-        day_dir  = None
-        week_dir = None
-        if do and do > 0:
-            if price > do * (1 + tol):   day_dir = "above"
-            elif price < do * (1 - tol): day_dir = "below"
-        if wo and wo > 0:
-            if price > wo * (1 + tol):   week_dir = "above"
-            elif price < wo * (1 - tol): week_dir = "below"
-
-        if day_dir == "above" and week_dir == "above":
-            raw.append({"id": 5, "ok": True,
-                "texto": (f"Precio sobre apertura del día ({do:.5g}) "
-                          f"y semana ({wo:.5g}) → sesgo alcista"),
-                "tipo": "bullish"})
-        elif day_dir == "below" and week_dir == "below":
-            raw.append({"id": 5, "ok": True,
-                "texto": (f"Precio bajo apertura del día ({do:.5g}) "
-                          f"y semana ({wo:.5g}) → sesgo bajista"),
-                "tipo": "bearish"})
-        elif day_dir and week_dir:
-            raw.append({"id": 5, "ok": False,
-                "texto": (f"Apertura día {'↑' if day_dir=='above' else '↓'} "
-                          f"vs semana {'↑' if week_dir=='above' else '↓'} — sin consenso"),
-                "tipo": "info"})
+    # ⑤ HOD / LOD del día actual (reemplaza apertura día/semana)
+    try:
+        today_idx = df.index
+        if hasattr(today_idx, 'date'):
+            today_mask = today_idx.date == today_idx[-1].date
+        else:
+            today_mask = today_idx.floor('D') == today_idx[-1].floor('D')
+        today_df = df[today_mask]
+        if len(today_df) >= 2:
+            # Excluir últimas 3 velas para no usar la vela abierta
+            closed_df = today_df.iloc[:-3] if len(today_df) > 3 else today_df.iloc[:-1]
+            hod = float(closed_df["High"].max()) if len(closed_df) > 0 else float(today_df["High"].max())
+            lod = float(closed_df["Low"].min())  if len(closed_df) > 0 else float(today_df["Low"].min())
+            day_range = hod - lod
+            tol = day_range * 0.15 if day_range > 0 else price * 0.0015
+            if abs(price - lod) <= tol:
+                raw.append({"id": 5, "ok": True,
+                    "texto": f"Precio cerca del mínimo del día (LOD {lod:.5g}) → soporte",
+                    "tipo": "bullish"})
+            elif abs(price - hod) <= tol:
+                raw.append({"id": 5, "ok": True,
+                    "texto": f"Precio cerca del máximo del día (HOD {hod:.5g}) → resistencia",
+                    "tipo": "bearish"})
+            else:
+                raw.append({"id": 5, "ok": False,
+                    "texto": f"HOD {hod:.5g} / LOD {lod:.5g} — precio en zona media",
+                    "tipo": "info"})
         else:
             raw.append({"id": 5, "ok": False,
-                "texto": "Datos de apertura del día/semana incompletos", "tipo": "info"})
-    else:
+                "texto": "HOD/LOD: datos insuficientes hoy", "tipo": "info"})
+    except Exception:
         raw.append({"id": 5, "ok": False,
-            "texto": "Datos de apertura no disponibles", "tipo": "info"})
+            "texto": "HOD/LOD no disponibles", "tipo": "info"})
 
-    # ⑥ Fibonacci 55.9% (neutral)
-    recent_df = df.tail(100) if len(df) > 100 else df
-    high_p = float(recent_df["High"].max())
-    low_p  = float(recent_df["Low"].min())
-    fib559 = high_p - (high_p - low_p) * 0.559
-    tol_f  = (high_p - low_p) * 0.015
-    if abs(price - fib559) <= tol_f:
-        raw.append({"id": 6, "ok": True,
-            "texto": f"Fibonacci 55.9% en {fib559:.5g} (rango {low_p:.5g}–{high_p:.5g})",
-            "tipo": "neutral"})
-    else:
-        pct_dist = (price - fib559) / fib559 * 100
-        raw.append({"id": 6, "ok": False,
-            "texto": f"Fib 55.9% en {fib559:.5g} ({pct_dist:+.1f}% de distancia)",
-            "tipo": "info"})
+    # ⑥ Fibonacci 55.9% — ELIMINADO (ya no se usa como confluencia)
+    raw.append({"id": 6, "ok": False,
+        "texto": "Fibonacci no activo en confluencias actuales", "tipo": "info"})
 
     # ⑦ Shark Fin
     if _calc_shark_fin is not None:

@@ -89,23 +89,21 @@ The app runs without any environment variables set — notifications are simply 
 
 ## Confluence Matrix (evaluate_confluencias)
 
-The system evaluates up to 7 confluences with **directional validation**:
+The system evaluates up to 6 confluences with **directional validation**:
 
 | # | Confluence | Direction | Points |
 |---|---|---|---|
 | ① | RSI < 47 / > 53 | bullish (comprar barato) / bearish (vender caro) | 1 |
-| ② | EMA50 vs EMA200 | bullish (EMA50 > EMA200) / bearish | 1 |
-| ③ | MonarcaBand touch | soporte → bullish / resistencia → bearish | 1 |
-| ④ | Day + Week open | both above → bullish / both below → bearish | 1 |
-| ⑤ | Fibonacci 55.9% | neutral (valid for both directions) | 1 |
-| ⑥ | Index components (^DJI/^NDX only) | ≥60% bullish/bearish | 1 |
-| ⑦ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
+| ② | Divergencia RSI activa | bullish / bearish según tipo | 1 |
+| ③ | Vacío FVG activo cerca del precio | bullish / bearish según dirección | 1 |
+| ④ | Patrón M/W/HCH confirmado | bearish / bullish | 1 |
+| ⑤ | HOD/LOD del día | cerca de LOD → soporte (bullish) / cerca de HOD → resistencia (bearish) | 1 |
+| ⑥ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
 
 **Directional rules:**
-- Strong signals (①②) determine direction; if they conflict → CONTRADICCIÓN
-- Weak/secondary signals (③④⑥) in opposite direction are **descartada** (discarded), not counted
-- Neutral signals (⑤) count regardless of direction
-- Shark Fin (⑦) only counts when aligned with strong direction; +2 for crossed, +4 for exceeded
+- Strong signals (①②④) determine direction; if they conflict → CONTRADICCIÓN
+- Weak/secondary signals (③⑤) in opposite direction are **descartada** (discarded), not counted
+- Shark Fin (⑥) only counts when aligned with strong direction; +2 for crossed, +4 for exceeded
 - FAVORABLE: ≥4 points aligned | INTERESANTE: 3 | CONSIDERAR: 2 | NO AHORA: ≤1
 
 **Schema `notification_prefs`**: `user_id, telegram_chat_id, telegram_enabled, email_address, email_enabled, tickers, timezone, created_at, id` — NO `language` column.
