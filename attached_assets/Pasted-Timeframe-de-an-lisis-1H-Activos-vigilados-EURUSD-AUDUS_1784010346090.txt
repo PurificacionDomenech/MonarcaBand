@@ -1,0 +1,364 @@
+Timeframe de análisis: 1H
+Activos vigilados: EURUSD, AUDUSD, USDJPY, GBPJPY, GC=F, SI=F, CL=F, ^DJI, ^NDX, BTC-USD
+
+════════════════════════════════════════════════════════
+PARTE 1 — ANTES DE CALCULAR NADA: LOS 3 FILTROS DUROS
+════════════════════════════════════════════════════════
+
+Estos tres criterios deben cumplirse SIMULTÁNEAMENTE.
+Si falta UNO SOLO, detén el análisis. No calcules puntuación.
+No envíes nada. Pasa al siguiente activo.
+
+FILTRO DURO ①  —  DIVERGENCIA RSI ACTIVA (mínimo Nivel 1)
+
+  Definición de divergencia alcista N1:
+    - El precio ha hecho un mínimo más bajo que el anterior
+      (en un rango de 5 a 50 velas entre los dos mínimos)
+    - El RSI en ese segundo mínimo es MAYOR que el RSI
+      en el primer mínimo
+    - Ambos mínimos son pivotes confirmados: el RSI a su
+      izquierda y derecha es mayor (lookback mínimo 5 velas)
+
+  Definición de divergencia bajista N1:
+    - El precio ha hecho un máximo más alto que el anterior
+      (en un rango de 5 a 50 velas entre los dos máximos)
+    - El RSI en ese segundo máximo es MENOR que el RSI
+      en el primer máximo
+    - Ambos máximos son pivotes confirmados: el RSI a su
+      izquierda y derecha es menor (lookback mínimo 5 velas)
+
+  RSI se calcula con longitud 14, suavizado Wilder (RMA).
+  Si no hay divergencia N1 activa → STOP. No continuar.
+
+FILTRO DURO ②  —  LIQUIDEZ BARRIDA EN LAS ÚLTIMAS 3 VELAS
+
+  Niveles de liquidez a vigilar (en orden de importancia):
+    MENOR:  HOD (máximo del día actual)
+            LOD (mínimo del día actual)
+            Alto de Asia (máximo sesión 23:00-07:00 hora ES)
+            Bajo de Asia (mínimo sesión 23:00-07:00 hora ES)
+            50% del rango asiático
+    MEDIA:  PDH (máximo del día anterior)
+            PDL (mínimo del día anterior)
+    MAYOR:  Máximo de la semana anterior
+            Mínimo de la semana anterior
+
+  Condición: en alguna de las últimas 3 velas cerradas de 1H,
+  el precio ha superado (aunque sea la mecha) uno de estos niveles.
+  Para setups BAJISTAS: el precio superó un nivel de arriba
+  (HOD, PDH, Alto Asia, máx semana).
+  Para setups LARGOS: el precio superó un nivel de abajo
+  (LOD, PDL, Bajo Asia, mín semana).
+
+  Si no se barrió ningún nivel en las últimas 3 velas → STOP.
+
+FILTRO DURO ③  —  TRAMPA CONFIRMADA (cierre de vuelta)
+
+  La trampa confirma que la rotura de liquidez fue FALSA.
+
+  Para setups BAJISTAS (el precio barrió un nivel de arriba):
+    La vela que barrió el nivel, O la vela inmediatamente
+    siguiente, debe haber CERRADO por debajo del nivel barrido.
+    Ejemplo: el precio subió sobre el HOD pero cerró bajo el HOD.
+
+  Para setups LARGOS (el precio barrió un nivel de abajo):
+    La vela que barrió el nivel, O la vela inmediatamente
+    siguiente, debe haber CERRADO por encima del nivel barrido.
+    Ejemplo: el precio bajó bajo el LOD pero cerró sobre el LOD.
+
+  Si la vela cerró al otro lado (rotura real confirmada) → STOP.
+  Eso no es una trampa, es una rotura válida. No es nuestro setup.
+
+════════════════════════════════════════════════════════
+PARTE 2 — PUNTUACIÓN (solo si los 3 filtros están OK)
+════════════════════════════════════════════════════════
+
+Una vez confirmados los 3 filtros, calcula la puntuación.
+Suma todos los puntos que apliquen. Máximo posible: 18 pts.
+
+── DIVERGENCIA RSI ──────────────────────────────────────
+
+  Divergencia N1 activa                              → +1 pt
+  Divergencia N2 activa además del N1                → +1 pt adicional
+    (N2: mismo tipo, lookback 10 velas, rango 10-200 velas)
+  Divergencia N3 activa además del N1 y N2           → +2 pts adicionales
+    (N3: mismo tipo, lookback 20 velas, rango 20-1000 velas)
+
+  Nota: N2 sin N1 no puntúa. N3 sin N1 y N2 no puntúa.
+  Deben ser del mismo tipo (todos alcistas o todos bajistas).
+
+── LIQUIDEZ BARRIDA ─────────────────────────────────────
+
+  Nivel MENOR barrido (HOD/LOD/Asia)                 → +1 pt
+  Nivel MEDIA barrido además (PDH/PDL)               → +1 pt adicional
+  Nivel MAYOR barrido además (semana/mes)             → +2 pts adicionales
+
+  Si se barrieron dos niveles en la misma vela
+  (ej: el precio rompió PDH Y HOD a la vez)          → cuenta ambos.
+
+── FVG — FAIR VALUE GAP ─────────────────────────────────
+
+  Definición: entre tres velas consecutivas existe un hueco
+  donde la mecha superior de la vela 1 NO toca la mecha
+  inferior de la vela 3 (FVG bajista) o al revés (FVG alcista).
+
+  FVG alcista activo en la dirección del setup largo  → +2 pts
+  FVG bajista activo en la dirección del setup corto  → +2 pts
+  El precio ya entró dentro del FVG (lo está tocando) → +1 pt adicional
+
+  Solo cuenta el FVG más cercano al precio actual.
+  FVG en dirección contraria al setup = no puntúa, no bloquea.
+
+── FILTRO EXTERNO ───────────────────────────────────────
+
+  Para pares con dólar (EURUSD, AUDUSD):
+    Setup LARGO en EURUSD → DXI debe mostrar divergencia BAJISTA → +2 pts
+    Setup CORTO en EURUSD → DXI debe mostrar divergencia ALCISTA → +2 pts
+    Si el DXI contradice el setup (ej: setup largo pero DXI alcista) → -3 pts
+
+  Para pares de yen (USDJPY, GBPJPY):
+    Setup CORTO (precio baja) → DXI debe mostrar div. BAJISTA → +2 pts
+    Setup LARGO (precio sube) → DXI debe mostrar div. ALCISTA → +2 pts
+
+  Para índices (^DJI, ^NDX):
+    Setup LARGO → VIX debe mostrar divergencia BAJISTA → +2 pts
+    Setup CORTO → VIX debe mostrar divergencia ALCISTA → +2 pts
+    Si el VIX contradice → -3 pts
+
+  Para materias primas (GC=F oro, SI=F plata):
+    Mismo filtro que EURUSD (relación inversa con DXI).
+
+  Para CL=F petróleo y BTC-USD:
+    Filtro externo no obligatorio. Si disponible, aplica VIX para BTC.
+
+  Si el filtro externo contradice el setup (puntuación negativa)
+  y la puntuación total baja de 6 → STOP. No enviar aunque
+  los 3 filtros duros estuvieran OK.
+
+── HORARIO DE SESIÓN ────────────────────────────────────
+
+  Ventana principal (09:00 – 11:00 hora Madrid)      → +1 pt
+  Ventana secundaria (12:20 – 12:40 hora Madrid)     → +1 pt
+  Cierre Londres (17:00 – 17:30 hora Madrid)         → +1 pt
+  Apertura Nueva York (14:30 – 15:30 hora Madrid)    → +1 pt
+  Fuera de cualquier ventana                         → 0 pts
+    (pero el aviso puede enviarse igual si ≥11 pts)
+
+── PATRÓN DE PRECIO ─────────────────────────────────────
+
+  Evalúa las últimas 30-50 velas. Detecta si existe alguno
+  de estos patrones en FORMACIÓN (no completo):
+
+  M EN FORMACIÓN (bajista):
+    - Existe un primer máximo claro (pivote confirmado)
+    - El precio ha intentado superarlo y se ha quedado
+      a menos del 1.5% de distancia (segundo techo)
+    - El RSI en el segundo intento es MENOR que en el primero
+    - Las dos cimas están separadas entre 5 y 40 velas
+    → +2 pts si está en formación
+    → +1 pt adicional si el segundo techo coincide con el
+       nivel de liquidez que fue barrido (confluencia perfecta)
+
+  W EN FORMACIÓN (alcista):
+    - Existe un primer mínimo claro (pivote confirmado)
+    - El precio ha intentado superarlo a la baja y se ha
+      quedado a menos del 1.5% de distancia (segundo suelo)
+    - El RSI en el segundo intento es MAYOR que en el primero
+    - Los dos suelos están separados entre 5 y 40 velas
+    → +2 pts si está en formación
+    → +1 pt adicional si el segundo suelo coincide con el
+       nivel de liquidez barrido
+
+  HCH EN FORMACIÓN (bajista):
+    - Existe un hombro izquierdo y una cabeza identificables
+    - El precio está formando el hombro derecho
+    - El hombro derecho es MENOR que la cabeza en precio
+    - El RSI en el hombro derecho es MENOR que en la cabeza
+    - El hombro derecho se aproxima al nivel del hombro
+      izquierdo (tolerancia ±2%)
+    → +2 pts si hombro derecho confirmado
+    → +1 pt adicional si el hombro derecho coincide con
+       el nivel de liquidez barrido
+
+  HCH INVERTIDO EN FORMACIÓN (alcista):
+    - Igual pero al revés: tres valles, el tercero mayor
+      que el central (cabeza)
+    → +2 pts / +1 pt adicional igual que arriba
+
+  IMPORTANTE: si el patrón ya está COMPLETO (la M ya cayó,
+  la W ya subió) → no puntúa. El movimiento ya ocurrió.
+  Solo puntúan los patrones donde el segundo techo o segundo
+  suelo se está formando AHORA, en las últimas 5 velas.
+
+── PATRÓN DE VELA EN 1H ─────────────────────────────────
+
+  En la última vela cerrada o la que está cerrando:
+
+  Martillo alcista (mecha inferior ≥ 2x el cuerpo,
+    cuerpo en tercio superior, mecha superior pequeña)    → +1 pt
+  Martillo bajista invertido / Shooting star              → +1 pt
+  Envolvente alcista (vela verde cubre la roja anterior)  → +1 pt
+  Envolvente bajista (vela roja cubre la verde anterior)  → +1 pt
+  Pin bar (mecha ≥ 3x el cuerpo, cualquier dirección)    → +1 pt
+  Doji en zona de liquidez                               → +0.5 pts
+
+  Solo el patrón más relevante de la última vela puntúa.
+  No suman varios patrones de la misma vela.
+
+════════════════════════════════════════════════════════
+PARTE 3 — UMBRALES DE ENVÍO
+════════════════════════════════════════════════════════
+
+Después de calcular la puntuación total:
+
+  0 – 6 pts      → NO ENVIAR. Guardar en log interno.
+  7 – 8 pts      → NO ENVIAR. Guardar como "en vigilancia".
+  9 – 10 pts     → ENVIAR alerta normal 🟡
+  11 – 12 pts    → ENVIAR alerta prioritaria 🟢
+  13 – 15 pts    → ENVIAR alerta urgente 🚨
+  16 – 18 pts    → ENVIAR alerta máxima 🚨🚨 (rarísima)
+
+  EXCEPCIÓN HORARIA: si el setup ocurre fuera de todas
+  las ventanas horarias, el umbral sube a 11 pts mínimo.
+
+  EXCEPCIÓN FILTRO NEGATIVO: si el filtro externo contradice
+  el setup y la puntuación baja de 7 → NO ENVIAR nunca,
+  aunque los filtros duros estén cumplidos.
+
+════════════════════════════════════════════════════════
+PARTE 4 — REGLAS ANTI-SPAM
+════════════════════════════════════════════════════════
+
+REGLA 1 — Una alerta por ciclo por activo.
+  Una vez enviada una alerta para un activo, no enviar
+  otra para ese mismo activo hasta que se cumpla UNO de:
+    a) Han pasado 4 horas desde la última alerta
+    b) El precio ha salido completamente del FVG
+       que disparó la alerta anterior
+    c) Los 3 filtros duros han dejado de cumplirse
+
+REGLA 2 — Actualización permitida si la puntuación sube.
+  Si ya se envió una alerta de 9 pts y el mismo setup
+  sube a 12 pts (porque el filtro externo acaba de confirmar
+  o el N2 se activó), enviar un mensaje de ACTUALIZACIÓN.
+  Condición: la puntuación debe haber subido mínimo 2 pts.
+  No enviar actualizaciones por subidas de 1 pt.
+
+REGLA 3 — Máximo 3 alertas por sesión en todos los activos.
+  Sesión = ventana Londres completa (09:00-17:30).
+  Si ya se enviaron 3 alertas en esa sesión, las siguientes
+  solo se envían si la puntuación es ≥ 13 pts.
+
+REGLA 4 — No enviar el mismo activo dos veces en 1 hora.
+  Aunque la puntuación cambie, si ya se envió alerta para
+  EURUSD hace menos de 60 minutos, esperar.
+
+REGLA 5 — Patrón en formación = aviso anticipado.
+  Si se detecta M, W o HCH en formación pero la puntuación
+  total aún no llega al umbral de envío (ej: 7 pts),
+  guardar en base de datos como "patrón vigilado".
+  Cuando el estirón (inducción) ocurra y active los
+  filtros duros, la puntuación subirá automáticamente
+  y el aviso se enviará en ese momento, no antes.
+
+════════════════════════════════════════════════════════
+PARTE 5 — FORMATO DEL MENSAJE TELEGRAM
+════════════════════════════════════════════════════════
+
+Estructura exacta del mensaje a enviar:
+
+[EMOJI_ESTADO] MATRIX LAB — [ESTADO]
+
+📊 [ACTIVO]  |  1H  |  [PRECIO_ACTUAL]
+🕐 [DÍA] [HORA] [TIMEZONE]
+
+[LARGO/CORTO] — [DESCRIPCIÓN SETUP]
+
+[LISTA DE CONFLUENCIAS ACTIVAS con ✅]
+[LISTA DE LO QUE FALTA con ◻️]
+
+[PATRÓN DETECTADO si aplica]
+
+⚡ Puntuación: [X]/18 pts
+[BARRA VISUAL: ████████░░ 8/10]
+
+SL sugerido: [PRECIO] ([REFERENCIA])
+TP sugerido: [PRECIO] (ratio [X:X])
+
+❗ No arriesgar más del 1% del balance
+──────────────────────────────────────
+Análisis técnico automatizado
+No es asesoría financiera
+
+Donde EMOJI_ESTADO es:
+  🟡 para 9-10 pts
+  🟢 para 11-12 pts
+  🚨 para 13-15 pts
+  🚨🚨 para 16-18 pts
+
+Donde ESTADO es:
+  FAVORABLE        (9-10 pts)
+  MUY FAVORABLE    (11-12 pts)
+  SEÑAL MÁXIMA     (13-15 pts)
+  CONFLUENCIA TOTAL (16-18 pts)
+
+════════════════════════════════════════════════════════
+PARTE 6 — EJEMPLO DE MENSAJE COMPLETO
+════════════════════════════════════════════════════════
+
+🟢 MATRIX LAB — MUY FAVORABLE
+
+📊 EURUSD  |  1H  |  1.0858
+🕐 Martes 10:28 Madrid
+
+📈 LARGO — W en formación + trampa sobre LOD
+
+✅ Divergencia RSI alcista N1 activa (RSI 34 vs 26)
+✅ Divergencia RSI alcista N2 activa (+1)
+✅ LOD barrido hace 2 velas (1.0841)
+✅ Trampa confirmada — cerró sobre LOD
+✅ FVG alcista activo 1.0848 – 1.0855
+✅ DXI divergencia bajista confirmada
+✅ W en formación — segundo suelo 1.0843
+   (RSI segundo suelo 34 > RSI primer suelo 26 ✓)
+✅ Ventana Londres activa (10:28)
+◻️ N3 no activo
+◻️ PDL no barrido
+
+⚡ Puntuación: 12/18 pts
+████████████░░░░░░ 12/18
+
+SL sugerido: 1.0838 (bajo el mínimo del estirón)
+TP sugerido: 1.0892 (HOD / ratio 1:2.8)
+
+❗ No arriesgar más del 1% del balance
+──────────────────────────────────────
+Análisis técnico automatizado
+No es asesoría financiera
+
+════════════════════════════════════════════════════════
+PARTE 7 — AVISO ANTICIPADO (patrón en formación)
+════════════════════════════════════════════════════════
+
+Si se detecta patrón M, W o HCH en formación pero aún
+no se activaron los 3 filtros duros, enviar este aviso
+previo SOLO si la puntuación parcial es ≥ 6 pts:
+
+⏳ MATRIX LAB — PATRÓN EN VIGILANCIA
+
+📊 [ACTIVO]  |  1H  |  [PRECIO]
+🕐 [DÍA] [HORA]
+
+⚠️ [PATRÓN] EN FORMACIÓN — esperando trampa
+
+[DESCRIPCIÓN del patrón: precios y RSI de ambos puntos]
+
+Esperando para activar alerta:
+→ Estirón sobre [NIVEL] ([PRECIO])
+→ Cierre de vuelta confirmado
+→ FVG en zona [RANGO]
+
+Puntuación actual: [X]/18 pts
+Umbral de alerta: 9 pts
+
+Si el estirón ocurre → alerta automática
