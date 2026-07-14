@@ -562,9 +562,23 @@ def _build_html(alertas: list[dict], now_str: str) -> str:
 
 # ── Contexto informativo (precio vs aperturas y componentes) ─
 
+def _ref_label(ref_val, bar_high, bar_low, is_high, lang):
+    """Devuelve etiqueta si la vela toc\u00f3 o super\u00f3 la referencia."""
+    if ref_val is None or bar_high is None or bar_low is None:
+        return ""
+    touched  = (bar_high >= ref_val * 0.9995) if is_high else (bar_low <= ref_val * 1.0005)
+    exceeded = (bar_high > ref_val) if is_high else (bar_low < ref_val)
+    if exceeded:
+        return "  " + chr(0x1F525) + (" NEW HIGH" if lang == "en" else " NUEVO M\u00c1XIMO")
+    elif touched:
+        return "  " + chr(0x1F4A5) + (" TOUCHED" if lang == "en" else " TOCADO")
+    return ""
+
+
 def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
     """
     Muestra referencias: aperturas + HOD/LOD del d\u00eda + PDH/PDL del d\u00eda anterior.
+    Si la vela de la alerta toc\u00f3 o super\u00f3 alguna referencia, se marca con \u2757 o \ud83d\udd25.
     """
     lines = []
     day_ctx  = resultado.get("day_context")
@@ -573,6 +587,8 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
     lod      = resultado.get("lod")
     pdh      = resultado.get("pdh")
     pdl      = resultado.get("pdl")
+    bar_high = resultado.get("bar_high")
+    bar_low  = resultado.get("bar_low")
 
     has_any = day_ctx or week_ctx or hod is not None or lod is not None or pdh is not None or pdl is not None
     if not has_any:
@@ -595,13 +611,17 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
             arr = dir_arrow(week_ctx["direction"])
             lines.append(f"  {arr} Week open: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
         if hod is not None:
-            lines.append(f"  {chr(0x1F4C8)} Day high (HOD): <code>{hod:.5g}</code>")
+            lbl = _ref_label(hod, bar_high, bar_low, True, lang)
+            lines.append(f"  {chr(0x1F4C8)} Day high (HOD): <code>{hod:.5g}</code>{lbl}")
         if lod is not None:
-            lines.append(f"  {chr(0x1F4C9)} Day low (LOD): <code>{lod:.5g}</code>")
+            lbl = _ref_label(lod, bar_high, bar_low, False, lang)
+            lines.append(f"  {chr(0x1F4C9)} Day low (LOD): <code>{lod:.5g}</code>{lbl}")
         if pdh is not None:
-            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} Prev day high (PDH): <code>{pdh:.5g}</code>")
+            lbl = _ref_label(pdh, bar_high, bar_low, True, lang)
+            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} Prev day high (PDH): <code>{pdh:.5g}</code>{lbl}")
         if pdl is not None:
-            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} Prev day low (PDL): <code>{pdl:.5g}</code>")
+            lbl = _ref_label(pdl, bar_high, bar_low, False, lang)
+            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} Prev day low (PDL): <code>{pdl:.5g}</code>{lbl}")
     else:
         lines.append("")
         lines.append(chr(0x1F4CC) + " <b>Referencias:</b>")
@@ -616,13 +636,17 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
             arr = dir_arrow(week_ctx["direction"])
             lines.append(f"  {arr} Apertura semana: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
         if hod is not None:
-            lines.append(f"  {chr(0x1F4C8)} M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>")
+            lbl = _ref_label(hod, bar_high, bar_low, True, lang)
+            lines.append(f"  {chr(0x1F4C8)} M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>{lbl}")
         if lod is not None:
-            lines.append(f"  {chr(0x1F4C9)} M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>")
+            lbl = _ref_label(lod, bar_high, bar_low, False, lang)
+            lines.append(f"  {chr(0x1F4C9)} M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>{lbl}")
         if pdh is not None:
-            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} M\u00e1ximo d\u00eda anterior (PDH): <code>{pdh:.5g}</code>")
+            lbl = _ref_label(pdh, bar_high, bar_low, True, lang)
+            lines.append(f"  {chr(0x2B06) + chr(0xFE0F)} M\u00e1ximo d\u00eda anterior (PDH): <code>{pdh:.5g}</code>{lbl}")
         if pdl is not None:
-            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} M\u00ednimo d\u00eda anterior (PDL): <code>{pdl:.5g}</code>")
+            lbl = _ref_label(pdl, bar_high, bar_low, False, lang)
+            lines.append(f"  {chr(0x2B07) + chr(0xFE0F)} M\u00ednimo d\u00eda anterior (PDL): <code>{pdl:.5g}</code>{lbl}")
 
     return lines
 

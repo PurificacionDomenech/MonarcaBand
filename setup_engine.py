@@ -704,6 +704,9 @@ def score_setup(
         "asia_low":        levels.get("asia_low"),
         "europe_high":     levels.get("europe_high"),
         "europe_low":      levels.get("europe_low"),
+        # high/low de la vela de la alerta para comparar con referencias
+        "bar_high":        float(df["High"].iloc[-1]) if len(df) else None,
+        "bar_low":         float(df["Low"].iloc[-1])  if len(df) else None,
     }
 
 
