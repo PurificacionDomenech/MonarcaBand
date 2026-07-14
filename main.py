@@ -609,7 +609,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
       ② Divergencia RSI activa → bullish/bearish según tipo
       ③ Vacío FVG activo cerca del precio → bullish/bearish según dirección
       ④ Patrón M/W/HCH confirmado → bearish/bullish
-      ⑤ HOD/LOD del día → soporte/resistencia
+      ⑤ (reservado — HOD/LOD no puntúa)
       ⑥ (reservado)
       ⑦ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
     """
@@ -734,39 +734,9 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 4, "ok": False,
             "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
 
-    # ⑤ HOD / LOD del día actual (reemplaza apertura día/semana)
-    try:
-        today_idx = df.index
-        if hasattr(today_idx, 'date'):
-            today_mask = today_idx.date == today_idx[-1].date
-        else:
-            today_mask = today_idx.floor('D') == today_idx[-1].floor('D')
-        today_df = df[today_mask]
-        if len(today_df) >= 2:
-            # Excluir últimas 3 velas para no usar la vela abierta
-            closed_df = today_df.iloc[:-3] if len(today_df) > 3 else today_df.iloc[:-1]
-            hod = float(closed_df["High"].max()) if len(closed_df) > 0 else float(today_df["High"].max())
-            lod = float(closed_df["Low"].min())  if len(closed_df) > 0 else float(today_df["Low"].min())
-            day_range = hod - lod
-            tol = day_range * 0.15 if day_range > 0 else price * 0.0015
-            if abs(price - lod) <= tol:
-                raw.append({"id": 5, "ok": True,
-                    "texto": f"Precio cerca del mínimo del día (LOD {lod:.5g}) → soporte",
-                    "tipo": "bullish"})
-            elif abs(price - hod) <= tol:
-                raw.append({"id": 5, "ok": True,
-                    "texto": f"Precio cerca del máximo del día (HOD {hod:.5g}) → resistencia",
-                    "tipo": "bearish"})
-            else:
-                raw.append({"id": 5, "ok": False,
-                    "texto": f"HOD {hod:.5g} / LOD {lod:.5g} — precio en zona media",
-                    "tipo": "info"})
-        else:
-            raw.append({"id": 5, "ok": False,
-                "texto": "HOD/LOD: datos insuficientes hoy", "tipo": "info"})
-    except Exception:
-        raw.append({"id": 5, "ok": False,
-            "texto": "HOD/LOD no disponibles", "tipo": "info"})
+    # ⑥ HOD/LOD — NO es confluencia; solo referencia de liquidez en setup_engine
+    raw.append({"id": 5, "ok": False,
+        "texto": "HOD/LOD no puntúa en confluencias (referencia de liquidez)", "tipo": "info"})
 
     # ⑥ Fibonacci 55.9% — ELIMINADO (ya no se usa como confluencia)
     raw.append({"id": 6, "ok": False,

@@ -4,18 +4,21 @@ Trading Band · 1H candles
 
 Pipeline obligatorio (los 3 deben cumplirse):
   1. Barrido de liquidez en últimas 3 velas (HOD/LOD/PDH/PDL/semana/mes)
-  2. Trampa confirmada (vela que barrió, o la siguiente, cerró al lado correcto)
+  2. Trampa confirmada (cierre de vuelta)
   3. Divergencia RSI activa (N1 mínimo) alineada con la dirección
 
-Scoring 0–15 pts (solo si los 3 criterios pasan):
-  Div N1 +1 | N2 +1 | N3 +2             (max 4)
-  Liquidez minor +1 | medium +1 | major +2 (max 4)
-  FVG activo +2 | ya tocado +1           (max 3)
-  Filtro DXY/VIX confirma               (max 2)
-  Sesión activa (Londres/NY)             (max 1)
-  Patrón M/W/HCH en formación/confirm    (max 1)
+Scoring 0–18 pts (solo si los 3 criterios pasan):
+  Divergencia:  N1 +1 | N2 +1 | N3 +2                    (max 4)
+  Liquidez:    minor +1 | medium +1 | major +2            (max 4)
+  FVG:         activo +2 | ya tocado +1                   (max 3)
+  Filtro DXI/VIX:  divergencia parcial +2 | confirmada +3  (max 3)
+  Sesión:     cada ventana activa +1 (Londres/NY/secundaria/cierre) (max 4)
+  Patrón:     M/W/HCH en formación +2 | confirmado +1    (max 3)
+  Velas:       martillo/envolvente/doji 0.5–1            (max 1)  [TODO]
 
-Umbrales:  ≤6→nada  7-8→guardar  9-10→FAVORABLE  11-12→MUY FAVORABLE  13-15→MÁXIMA
+Umbrales Telegram:  0–6 → no enviar  |  7–8 → guardar  |  9–10 → FAVORABLE
+                     11–12 → MUY FAVORABLE  |  13–15 → SEÑAL MÁXIMA
+                     16–18 → CONFLUENCIA TOTAL
 """
 
 import pandas as pd
@@ -40,11 +43,15 @@ _USD_BASE  = {"USDJPY=X"}                              # DXY sube → bullish en
 _INDICES   = {"^DJI", "^NDX", "^GSPC"}                # usar VIX
 # Commodities, BTC, cruces JPY/GBP → sin filtro DXY/VIX
 
-# ── Ventanas de sesión (UTC) ─────────────────────────────────────
-_LONDON_OPEN  = dtime(7,  0)
-_LONDON_CLOSE = dtime(12, 0)
-_NY_OPEN      = dtime(12, 0)
-_NY_CLOSE     = dtime(17, 0)
+# ── Ventanas de sesión (hora Madrid → UTC) ─────────────────────
+_LONDON_OPEN      = dtime(8,  0)   # 09:00 Madrid
+_LONDON_CLOSE     = dtime(10, 0)  # 11:00 Madrid
+_SECONDARY_OPEN   = dtime(11, 20) # 12:20 Madrid
+_SECONDARY_CLOSE  = dtime(11, 40) # 12:40 Madrid
+_NY_OPEN          = dtime(13, 30) # 14:30 Madrid
+_NY_CLOSE         = dtime(14, 30) # 15:30 Madrid
+_LONDON_CLOSE_2   = dtime(16, 0)  # 17:00 Madrid
+_LONDON_CLOSE_2_E = dtime(16, 30) # 17:30 Madrid
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -363,7 +370,7 @@ def _score_external_filter(ticker: str, direction: str) -> tuple[int, str]:
         confirms = (direction == "bearish" and dxy == "rising") or \
                    (direction == "bullish" and dxy == "falling")
         if confirms:
-            label = f"DXY {'↑' if dxy == 'rising' else '↓'} confirma"
+            label = f"DXI divergencia bajista confirmada" if direction == "bullish" else f"DXI divergencia alcista confirmada"
             return 2, label
         return 0, ""
 
@@ -374,7 +381,7 @@ def _score_external_filter(ticker: str, direction: str) -> tuple[int, str]:
         confirms = (direction == "bullish" and dxy == "rising") or \
                    (direction == "bearish" and dxy == "falling")
         if confirms:
-            label = f"DXY {'↑' if dxy == 'rising' else '↓'} confirma"
+            label = f"DXI divergencia alcista confirmada" if direction == "bullish" else f"DXI divergencia bajista confirmada"
             return 2, label
         return 0, ""
 
@@ -395,10 +402,11 @@ def _score_external_filter(ticker: str, direction: str) -> tuple[int, str]:
 # 6. SESIÓN ACTIVA
 # ─────────────────────────────────────────────────────────────────
 
-def _is_session_active(df: pd.DataFrame) -> bool:
+def _is_session_active(df: pd.DataFrame) -> tuple[int, list[str]]:
     """
-    Comprueba si la última vela cayó dentro de una sesión activa.
-    Londres: 07:00–12:00 UTC | Nueva York: 12:00–17:00 UTC
+    Comprueba en qué ventanas de sesión cayó la última vela.
+    Devuelve (puntos, [nombres de ventanas activas]).
+    Cada ventana activa suma +1 punto.
     """
     ts = df.index[-1]
     if hasattr(ts, "tz") and ts.tz is None:
@@ -407,9 +415,16 @@ def _is_session_active(df: pd.DataFrame) -> bool:
         ts = ts.tz_convert("UTC")
 
     t = ts.time()
-    in_london = _LONDON_OPEN <= t < _LONDON_CLOSE
-    in_ny     = _NY_OPEN     <= t < _NY_CLOSE
-    return in_london or in_ny
+    active = []
+    if _LONDON_OPEN <= t < _LONDON_CLOSE:
+        active.append("Londres")
+    if _SECONDARY_OPEN <= t < _SECONDARY_CLOSE:
+        active.append("Secundaria")
+    if _NY_OPEN <= t < _NY_CLOSE:
+        active.append("NY")
+    if _LONDON_CLOSE_2 <= t < _LONDON_CLOSE_2_E:
+        active.append("Cierre Londres")
+    return len(active), active
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -423,54 +438,70 @@ _CONFIRM_ESTADOS = {"confirmado"}
 def _score_patterns(df: pd.DataFrame, direction: str) -> tuple[int, dict]:
     """
     Devuelve (puntos, info_dict) de patrones M/W/HCH.
-    +1 si hay patrón alineado en formación o confirmado.
+    +2 si hay patrón alineado en formación.
+    +1 si hay patrón confirmado.
+    Máx 3 puntos total (independiente del tipo de patrón).
     """
     if not HAS_TB:
         return 0, {}
 
     info = {}
     pts  = 0
+    best = 0  # mayor puntuación encontrada
 
+    def _pat_pts(estado: str) -> int:
+        if estado in _FORMING_ESTADOS:
+            return 2
+        if estado in _CONFIRM_ESTADOS:
+            return 1
+        return 0
+
+    # M / W
     try:
         mw = _calc_mw(df)
         if direction == "bearish":
             pat = mw.get("M", {})
             if pat:
                 estado = pat.get("estado", "")
-                if estado in _CONFIRM_ESTADOS or estado in _FORMING_ESTADOS:
-                    pts = 1
-                    info["M"] = {"estado": estado}
+                p = _pat_pts(estado)
+                if p > best:
+                    best = p
+                    info = {"M": {"estado": estado}}
         else:
             pat = mw.get("W", {})
             if pat:
                 estado = pat.get("estado", "")
-                if estado in _CONFIRM_ESTADOS or estado in _FORMING_ESTADOS:
-                    pts = 1
-                    info["W"] = {"estado": estado}
+                p = _pat_pts(estado)
+                if p > best:
+                    best = p
+                    info = {"W": {"estado": estado}}
     except Exception:
         pass
 
-    if pts == 0:
+    # HCH
+    if best < 3:
         try:
             hch = _calc_hch(df)
             if direction == "bearish":
                 pat = hch.get("HCH", {})
                 if pat:
                     estado = pat.get("estado", "")
-                    if estado in _CONFIRM_ESTADOS or estado in _FORMING_ESTADOS:
-                        pts = 1
-                        info["HCH"] = {"estado": estado}
+                    p = _pat_pts(estado)
+                    if p > best:
+                        best = p
+                        info = {"HCH": {"estado": estado}}
             else:
                 pat = hch.get("HCH_inv", {})
                 if pat:
                     estado = pat.get("estado", "")
-                    if estado in _CONFIRM_ESTADOS or estado in _FORMING_ESTADOS:
-                        pts = 1
-                        info["HCH_inv"] = {"estado": estado}
+                    p = _pat_pts(estado)
+                    if p > best:
+                        best = p
+                        info = {"HCH_inv": {"estado": estado}}
         except Exception:
             pass
 
-    return pts, info
+    return best, info
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -585,8 +616,7 @@ def score_setup(
     pts += filter_pts
 
     # ── Sesión ───────────────────────────────────────────────────
-    session_active = _is_session_active(df)
-    session_pts    = 1 if session_active else 0
+    session_pts, session_names = _is_session_active(df)
     bd["session_pts"] = session_pts
     pts += session_pts
 
@@ -595,7 +625,7 @@ def score_setup(
     bd["pattern_pts"] = pattern_pts
     pts += pattern_pts
 
-    pts = min(pts, 15)
+    pts = min(pts, 18)
 
     # ── Umbral ───────────────────────────────────────────────────
     if pts <= 6:
@@ -606,8 +636,15 @@ def score_setup(
         estado, nivel = "FAVORABLE",     "normal"
     elif pts <= 12:
         estado, nivel = "MUY_FAVORABLE", "high"
+    elif pts <= 15:
+        estado, nivel = "SEÑAL_MÁXIMA", "urgent"
     else:
-        estado, nivel = "MAXIMA",        "urgent"
+        estado, nivel = "CONFLUENCIA_TOTAL", "max"
+
+    # ── Cálculo de SL/TP básico ────────────────────────────
+    price_now = float(df["Close"].iloc[-1])
+    atr       = _calc_atr(df, 14)
+    sl, tp    = _calc_sl_tp(price_now, direction, atr, sweep, levels)
 
     return {
         "puntos":         pts,
@@ -620,12 +657,77 @@ def score_setup(
         "levels":         levels,
         "sweep":          sweep,
         "divergence":     divergence,
-        "session_active": session_active,
+        "session_pts":    session_pts,
+        "session_names":  session_names,
         "ticker":         ticker.upper(),
+        "sl":             sl,
+        "tp":             tp,
+        "price":          price_now,
     }
 
 
 # ─────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────
+# 9b. SL / TP BÁSICO
+# ─────────────────────────────────────────────────────────────────
+
+def _calc_atr(df: pd.DataFrame, period: int = 14) -> float:
+    """Calcula ATR simple."""
+    try:
+        high_low = df["High"] - df["Low"]
+        high_close = (df["High"] - df["Close"].shift()).abs()
+        low_close = (df["Low"] - df["Close"].shift()).abs()
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        return float(tr.tail(period).mean())
+    except Exception:
+        return 0.0
+
+
+def _calc_sl_tp(
+    price: float,
+    direction: str,
+    atr: float,
+    sweep: dict,
+    levels: dict,
+) -> tuple[float | None, float | None]:
+    """SL bajo el mínimo del estirón; TP al HOD/LOD opuesto o 2x ATR."""
+    if not price or price <= 0:
+        return None, None
+
+    sl = None
+    tp = None
+
+    # SL: debajo del mínimo del estirón (para largos) o encima del máximo (para cortos)
+    sweep_low  = sweep.get("sweep_low")
+    sweep_high = sweep.get("sweep_high")
+
+    if direction == "bullish":
+        if sweep_low:
+            sl = sweep_low * 0.998  # 0.2% debajo del mínimo del estirón
+        elif atr > 0:
+            sl = price - atr
+        # TP: HOD del día o 2x ATR
+        hod = levels.get("HOD")
+        if hod and hod > price:
+            tp = hod
+        elif atr > 0:
+            tp = price + 2 * atr
+    else:
+        if sweep_high:
+            sl = sweep_high * 1.002  # 0.2% encima del máximo del estirón
+        elif atr > 0:
+            sl = price + atr
+        # TP: LOD del día o 2x ATR
+        lod = levels.get("LOD")
+        if lod and lod < price:
+            tp = lod
+        elif atr > 0:
+            tp = price - 2 * atr
+
+    return sl, tp
+
+
 # 10. FUNCIÓN PRINCIPAL
 # ─────────────────────────────────────────────────────────────────
 

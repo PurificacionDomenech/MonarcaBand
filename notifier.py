@@ -1133,10 +1133,8 @@ def _fmt_price(p: float) -> str:
 
 def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     """
-    Construye el mensaje HTML de Telegram para un setup detectado.
-    nivel_alerta: "normal" → anticipatoria (9-10pts)
-                  "high"   → señal principal (11-12pts)
-                  "urgent" → señal máxima (13-15pts)
+    Construye el mensaje HTML de Telegram segun especificacion exacta.
+    Formato: [EMOJI] MATRIX LAB — [ESTADO]
     """
     nivel     = result.get("nivel_alerta", "normal")
     direction = result.get("direction", "bullish")
@@ -1147,88 +1145,137 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     breakdown = result.get("breakdown", {})
     fvg       = result.get("fvg")
     patterns  = result.get("patterns", {})
-    session   = result.get("session_active", False)
+    session_names = result.get("session_names", [])
+    sl        = result.get("sl")
+    tp        = result.get("tp")
+    price_now = result.get("price", 0)
 
-    dir_emoji = _SETUP_DIR_EMOJI.get(direction, "⚪")
-    dir_es    = _SETUP_DIR_ES.get(direction, direction.upper())
+    dir_es = _SETUP_DIR_ES.get(direction, direction.upper())
+    dir_emoji = "📈" if direction == "bullish" else "📉"
 
-    # Precio actual (de la divergencia o sweep)
-    price_str = _fmt_price(divergence.get("price") or sweep.get("sweep_high") or sweep.get("level_price"))
+    # EMOJI segun puntuacion
+    if puntos >= 16:
+        emoji_estado = "🚨🚨"
+    elif puntos >= 13:
+        emoji_estado = "🚨"
+    elif puntos >= 11:
+        emoji_estado = "🟢"
+    elif puntos >= 9:
+        emoji_estado = "🟡"
+    else:
+        emoji_estado = "⏳"
+
+    # ESTADO segun puntuacion
+    estado_map = {
+        "FAVORABLE":      "FAVORABLE",
+        "MUY_FAVORABLE":  "MUY FAVORABLE",
+        "SEÑAL_MÁXIMA":   "SEÑAL MÁXIMA",
+        "CONFLUENCIA_TOTAL":"CONFLUENCIA TOTAL",
+        "CONSIDERAR":     "CONSIDERAR",
+    }
+    estado_str = estado_map.get(estado, estado.replace("_", " "))
+
+    price_str = _fmt_price(price_now) if price_now else _fmt_price(divergence.get("price") or sweep.get("level_price"))
     level_name = _SETUP_LVL_ES.get(sweep.get("level_type", ""), sweep.get("level_type", "").upper())
     level_px   = _fmt_price(sweep.get("level_price"))
-    tier_es    = _SETUP_TIER_ES.get(sweep.get("level_tier", "minor"), "")
 
     rsi_val    = divergence.get("rsi")
     rsi_prev   = divergence.get("rsi_prev")
     div_level  = divergence.get("level", 1)
 
-    # Header según nivel
-    if nivel == "urgent":
-        header = f"🚨 <b>TRADING BAND — SEÑAL MÁXIMA</b>"
-        sub    = f"🚨 N1+N2+N3 + liquidez {tier_es} — {puntos}/15 pts"
-    elif nivel == "high":
-        header = f"🟢 <b>TRADING BAND — SEÑAL ACTIVA</b>"
-        sub    = f"MUY FAVORABLE — {puntos}/15 pts"
+    # Setup description
+    pat_name = next(iter(patterns.keys()), "")
+    pat_estado = (patterns.get(pat_name) or {}).get("estado", "") if patterns else ""
+    setup_desc = ""
+    if pat_name and pat_estado:
+        setup_desc = f"{pat_name} {pat_estado} + trampa sobre {level_name}"
     else:
-        header = f"⚠️ <b>TRADING BAND — SETUP EN FORMACIÓN</b>"
-        sub    = f"FAVORABLE — {puntos}/15 pts"
-
-    if nivel == "normal":
-        setup_label = f"SETUP {dir_es} — VIGILAR TRAMPA"
-    else:
-        setup_label = f"SETUP {dir_es} CONFIRMADO"
+        setup_desc = f"trampa sobre {level_name}"
 
     lines = [
-        header,
+        f"{emoji_estado} MATRIX LAB — {estado_str}",
         "",
-        f"📊 <b>{ticker}</b>  |  1H  |  {price_str}",
+        f"📊 {ticker}  |  1H  |  {price_str}",
         f"🕐 {now_str}",
         "",
-        f"{dir_emoji} <b>{setup_label}</b>",
+        f"{dir_emoji} {dir_es} — {setup_desc}",
         "",
     ]
 
-    # Divergencia
-    rsi_str = f"RSI {rsi_val:.1f}" if rsi_val else "RSI"
-    if rsi_prev:
-        rsi_str += f" ← {rsi_prev:.1f}"
-    lines.append(f"✅ Divergencia RSI N{div_level} {direction} activa ({rsi_str})")
+    # Lista de confluencias activas
+    lines.append(f"✅ Divergencia RSI {direction} N{div_level} activa (RSI {rsi_val:.0f} vs {rsi_prev:.0f})")
     if breakdown.get("div_pts", 0) >= 3:
-        lines.append(f"✅ N2 también activa (+1)")
+        lines.append(f"✅ Divergencia RSI {direction} N2 activa (+1)")
     if breakdown.get("div_pts", 0) >= 4:
-        lines.append(f"✅ N3 también activa (+2)")
+        lines.append(f"✅ Divergencia RSI {direction} N3 activa (+2)")
 
-    # Liquidez + trampa
-    lines.append(f"✅ {level_name} barrido: {level_px} — trampa confirmada ✓ (+{breakdown.get('liq_pts', 1)})")
+    lines.append(f"✅ {level_name} barrido hace {sweep.get('candles_ago', 1)} vela(s) ({level_px})")
+    lines.append(f"✅ Trampa confirmada — cerró {direction} del {level_name}")
 
-    # FVG
     if fvg and breakdown.get("fvg_pts", 0) > 0:
         fvg_top = _fmt_price(fvg.get("top"))
         fvg_bot = _fmt_price(fvg.get("bottom"))
-        touched = " (tocado)" if fvg.get("touched") else ""
-        lines.append(f"✅ FVG {direction} activo: {fvg_bot}–{fvg_top}{touched} (+{breakdown['fvg_pts']})")
+        lines.append(f"✅ FVG {direction} activo {fvg_bot} – {fvg_top}")
 
-    # Filtro externo
     if breakdown.get("filter_pts", 0) > 0:
-        lines.append(f"✅ {breakdown.get('filter_label', 'Filtro externo')} (+{breakdown['filter_pts']})")
+        lines.append(f"✅ {breakdown.get('filter_label', 'Filtro externo')}")
 
-    # Sesión
-    if session:
-        lines.append(f"✅ Sesión activa (+1)")
-
-    # Patrones
     if patterns and breakdown.get("pattern_pts", 0) > 0:
-        pat_name = next(iter(patterns.keys()), "")
-        pat_estado = (patterns.get(pat_name) or {}).get("estado", "")
-        if pat_name and pat_estado:
-            lines.append(f"✅ Patrón {pat_name} — {pat_estado} (+1)")
+        lines.append(f"✅ {pat_name} en {pat_estado} — precio pivote {level_px}")
+        if rsi_val and rsi_prev:
+            lines.append(f"   (RSI segundo suelo {rsi_val:.0f} > RSI primer suelo {rsi_prev:.0f} ✓)")
+
+    for sn in session_names:
+        lines.append(f"✅ Ventana {sn} activa")
+
+    # Lista de lo que falta
+    missing = []
+    if breakdown.get("div_pts", 0) < 4:
+        missing.append("N3 no activo")
+    has_pdh_pdl = False
+    lvl = result.get("levels", {})
+    if isinstance(lvl, dict):
+        for k in lvl:
+            if str(k).startswith("PD") or str(k).startswith("pd"):
+                has_pdh_pdl = True
+    if not has_pdh_pdl:
+        missing.append("PDH/PDL no barrido")
+    for m in missing:
+        lines.append(f"◻️ {m}")
+
+    # Barra visual
+    filled = min(puntos, 18)
+    bar = "█" * filled + "░" * (18 - filled)
 
     lines += [
         "",
-        f"<b>Puntuación: {puntos}/15 pts — {sub}</b>",
-        "─────────────────────",
-        "⚠️ Gestiona riesgo — máx 1% del balance",
+        f"⚡ Puntuación: {puntos}/18 pts",
+        f"{bar} {puntos}/18",
+        "",
     ]
+
+    # SL/TP
+    if sl and tp:
+        sl_str = _fmt_price(sl)
+        tp_str = _fmt_price(tp)
+        ratio = round(abs(tp - price_now) / abs(price_now - sl), 1) if price_now and sl != price_now else "?"
+        lines.append(f"SL sugerido: {sl_str} (bajo el mínimo del estirón)")
+        lines.append(f"TP sugerido: {tp_str} ({level_name} / ratio 1:{ratio})")
+        lines.append("")
+
+    # Footer
+    lines += [
+        "❗ No arriesgar más del 1% del balance",
+        "──────────────────────────────────────",
+        "Análisis técnico automatizado",
+        "No es asesoría financiera",
+    ]
+
+    # Enlace TradingView
+    tv = _tv_link(ticker, "es")
+    if tv:
+        lines.append("")
+        lines.append(tv)
 
     return "\n".join(lines)
 
