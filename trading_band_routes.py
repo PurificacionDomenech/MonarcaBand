@@ -638,7 +638,7 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
         return {"error": str(e), "trace": traceback.format_exc()}
 
 
-def calc_pattern_mw(df: pd.DataFrame, lookback: int = 40, tol: float = 0.018) -> dict:
+def calc_pattern_mw(df: pd.DataFrame, lookback: int = 80, tol: float = 0.018) -> dict:
     """
     Detecta M (doble techo) y W (doble suelo) en el dataframe de precios.
     Retorna coordenadas completas + estado (confirmado/formando).
@@ -764,7 +764,7 @@ def calc_pattern_mw(df: pd.DataFrame, lookback: int = 40, tol: float = 0.018) ->
     return result
 
 
-def calc_pattern_hch(df: pd.DataFrame, lookback: int = 60, tol: float = 0.02) -> dict:
+def calc_pattern_hch(df: pd.DataFrame, lookback: int = 120, tol: float = 0.02) -> dict:
     """
     Detecta HCH bajista e HCH invertido alcista.
     Estado 'formando_hd' = hombro derecho aún no completado.

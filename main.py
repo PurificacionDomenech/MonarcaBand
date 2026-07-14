@@ -609,9 +609,8 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
       ② Divergencia RSI activa → bullish/bearish según tipo
       ③ Vacío FVG activo cerca del precio → bullish/bearish según dirección
       ④ Patrón M/W/HCH confirmado → bearish/bullish
-      ⑤ (reservado — HOD/LOD no puntúa)
-      ⑥ (reservado)
-      ⑦ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
+      ⑤ HOD/LOD → referencia de liquidez (no puntua)
+      ⑥ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
     """
     if len(df) < 14:
         return None
@@ -735,12 +734,21 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
 
     # ⑥ HOD/LOD — NO es confluencia; solo referencia de liquidez en setup_engine
-    raw.append({"id": 5, "ok": False,
-        "texto": "HOD/LOD no puntúa en confluencias (referencia de liquidez)", "tipo": "info"})
+    # ⑦ HOD/LOD — referencia de liquidez (valores reales del día)
+    try:
+        day_high = float(df["High"].iloc[-min(24, len(df)):].max()) if len(df) >= 1 else None
+        day_low  = float(df["Low"].iloc[-min(24, len(df)):].min())  if len(df) >= 1 else None
+        if day_high is not None and day_low is not None:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
+        else:
+            raw.append({"id": 5, "ok": False,
+                "texto": "HOD/LOD no disponible", "tipo": "info"})
+    except Exception:
+        raw.append({"id": 5, "ok": False,
+            "texto": "HOD/LOD no disponible", "tipo": "info"})
 
-    # ⑥ Fibonacci 55.9% — ELIMINADO (ya no se usa como confluencia)
-    raw.append({"id": 6, "ok": False,
-        "texto": "Fibonacci no activo en confluencias actuales", "tipo": "info"})
+    # ⑦ Fibonacci 55.9% — ELIMINADO (no se muestra)
 
     # ⑦ Shark Fin
     if _calc_shark_fin is not None:

@@ -570,9 +570,11 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
     """
     lines = []
     day_ctx  = resultado.get("day_context")
+    hod      = resultado.get("hod")
+    lod      = resultado.get("lod")
     week_ctx = resultado.get("week_context")
 
-    if not day_ctx and not week_ctx:
+    if not day_ctx and not week_ctx and hod is None and lod is None:
         return lines
 
     def dir_arrow(d):
@@ -604,6 +606,10 @@ def _build_day_context_lines(resultado: dict, lang: str) -> list[str]:
             pct = week_ctx["pct"]
             arr = dir_arrow(week_ctx["direction"])
             lines.append(f"  {arr} Apertura semana: <code>{wo:.5g}</code>  <i>{pct:+.2f}%</i>")
+        if hod is not None:
+            lines.append(f"  \ud83d\udcc8 M\u00e1ximo d\u00eda (HOD): <code>{hod:.5g}</code>")
+        if lod is not None:
+            lines.append(f"  \ud83d\udcc9 M\u00ednimo d\u00eda (LOD): <code>{lod:.5g}</code>")
 
     return lines
 
@@ -1134,7 +1140,8 @@ def _fmt_price(p: float) -> str:
 def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     """
     Construye el mensaje HTML de Telegram segun especificacion exacta.
-    Formato: [EMOJI] MATRIX LAB — [ESTADO]
+    Formato: [EMOJI] MATRIX LAB - [ESTADO]
+    Puntuacion maxima: 18 pts
     """
     nivel     = result.get("nivel_alerta", "normal")
     direction = result.get("direction", "bullish")
@@ -1167,11 +1174,11 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
 
     # ESTADO segun puntuacion
     estado_map = {
-        "FAVORABLE":      "FAVORABLE",
-        "MUY_FAVORABLE":  "MUY FAVORABLE",
-        "SEÑAL_MÁXIMA":   "SEÑAL MÁXIMA",
-        "CONFLUENCIA_TOTAL":"CONFLUENCIA TOTAL",
-        "CONSIDERAR":     "CONSIDERAR",
+        "FAVORABLE":       "FAVORABLE",
+        "MUY_FAVORABLE":   "MUY FAVORABLE",
+        "SEÑAL_MÁXIMA":    "SEÑAL MÁXIMA",
+        "CONFLUENCIA_TOTAL": "CONFLUENCIA TOTAL",
+        "CONSIDERAR":      "CONSIDERAR",
     }
     estado_str = estado_map.get(estado, estado.replace("_", " "))
 
@@ -1192,48 +1199,49 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     else:
         setup_desc = f"trampa sobre {level_name}"
 
-    lines = [
-        f"{emoji_estado} MATRIX LAB — {estado_str}",
+    out_lines = [
+        f"{emoji_estado} MATRIX LAB - {estado_str}",
         "",
         f"📊 {ticker}  |  1H  |  {price_str}",
         f"🕐 {now_str}",
         "",
-        f"{dir_emoji} {dir_es} — {setup_desc}",
+        f"{dir_emoji} {dir_es} - {setup_desc}",
         "",
     ]
 
     # Lista de confluencias activas
-    lines.append(f"✅ Divergencia RSI {direction} N{div_level} activa (RSI {rsi_val:.0f} vs {rsi_prev:.0f})")
+    out_lines.append(f"✅ Divergencia RSI {direction} N{div_level} activa (RSI {rsi_val:.0f} vs {rsi_prev:.0f})")
     if breakdown.get("div_pts", 0) >= 3:
-        lines.append(f"✅ Divergencia RSI {direction} N2 activa (+1)")
+        out_lines.append(f"✅ Divergencia RSI {direction} N2 (segundo nivel, mas profunda) activa (+1)")
     if breakdown.get("div_pts", 0) >= 4:
-        lines.append(f"✅ Divergencia RSI {direction} N3 activa (+2)")
+        out_lines.append(f"✅ Divergencia RSI {direction} N3 (tercer nivel, maxima fuerza) activa (+2)")
 
-    lines.append(f"✅ {level_name} barrido hace {sweep.get('candles_ago', 1)} vela(s) ({level_px})")
-    lines.append(f"✅ Trampa confirmada — cerró {direction} del {level_name}")
+    out_lines.append(f"✅ {level_name} barrido hace {sweep.get('candles_ago', 1)} vela(s) ({level_px})")
+    out_lines.append(f"✅ Trampa confirmada - cerro {direction} del {level_name}")
 
     if fvg and breakdown.get("fvg_pts", 0) > 0:
         fvg_top = _fmt_price(fvg.get("top"))
         fvg_bot = _fmt_price(fvg.get("bottom"))
-        lines.append(f"✅ FVG {direction} activo {fvg_bot} – {fvg_top}")
+        out_lines.append(f"✅ FVG {direction} activo {fvg_bot} - {fvg_top}")
 
+    # Filtro externo DXI/VIX con confirmacion/contradiccion
     filter_confirms = result.get("filter_confirms")
     filter_label    = breakdown.get("filter_label", "")
     if filter_label:
         if filter_confirms is True:
-            lines.append(f"✅ {filter_label}")
+            out_lines.append(f"✅ {filter_label}")
         elif filter_confirms is False:
-            lines.append(f"❌ {filter_label}")
+            out_lines.append(f"❌ {filter_label}")
         else:
-            lines.append(f"◻️ {filter_label}")
+            out_lines.append(f"◻️ {filter_label}")
 
     if patterns and breakdown.get("pattern_pts", 0) > 0:
-        lines.append(f"✅ {pat_name} en {pat_estado} — precio pivote {level_px}")
+        out_lines.append(f"✅ {pat_name} en {pat_estado} - precio pivote {level_px}")
         if rsi_val and rsi_prev:
-            lines.append(f"   (RSI segundo suelo {rsi_val:.0f} > RSI primer suelo {rsi_prev:.0f} ✓)")
+            out_lines.append(f"   (RSI segundo suelo {rsi_val:.0f} > RSI primer suelo {rsi_prev:.0f} ✓)")
 
     for sn in session_names:
-        lines.append(f"✅ Ventana {sn} activa")
+        out_lines.append(f"✅ Ventana {sn} activa")
 
     # Lista de lo que falta
     missing = []
@@ -1248,15 +1256,15 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     if not has_pdh_pdl:
         missing.append("PDH/PDL no barrido")
     for m in missing:
-        lines.append(f"◻️ {m}")
+        out_lines.append(f"◻️ {m}")
 
     # Barra visual
     filled = min(puntos, 18)
     bar = "█" * filled + "░" * (18 - filled)
 
-    lines += [
+    out_lines += [
         "",
-        f"⚡ Puntuación: {puntos}/18 pts",
+        f"⚡ Puntuacion: {puntos}/18 pts",
         f"{bar} {puntos}/18",
         "",
     ]
@@ -1266,26 +1274,25 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
         sl_str = _fmt_price(sl)
         tp_str = _fmt_price(tp)
         ratio = round(abs(tp - price_now) / abs(price_now - sl), 1) if price_now and sl != price_now else "?"
-        lines.append(f"SL sugerido: {sl_str} (bajo el mínimo del estirón)")
-        lines.append(f"TP sugerido: {tp_str} ({level_name} / ratio 1:{ratio})")
-        lines.append("")
+        out_lines.append(f"SL sugerido: {sl_str} (bajo el minimo del estiron)")
+        out_lines.append(f"TP sugerido: {tp_str} ({level_name} / ratio 1:{ratio})")
+        out_lines.append("")
 
     # Footer
-    lines += [
-        "❗ No arriesgar más del 1% del balance",
-        "──────────────────────────────────────",
-        "Análisis técnico automatizado",
-        "No es asesoría financiera",
+    out_lines += [
+        "❗ No arriesgar mas del 1% del balance",
+        "─" * 20,
+        "Analisis tecnico automatizado",
+        "No es asesoria financiera",
     ]
 
     # Enlace TradingView
     tv = _tv_link(ticker, "es")
     if tv:
-        lines.append("")
-        lines.append(tv)
+        out_lines.append("")
+        out_lines.append(tv)
 
-    return "\n".join(lines)
-
+    return "\n".join(out_lines)
 
 async def notify_setup_alerts(setups_by_ticker: dict) -> None:
     """
