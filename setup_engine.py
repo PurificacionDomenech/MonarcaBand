@@ -678,6 +678,25 @@ def score_setup(
     atr       = _calc_atr(df, 14)
     sl, tp    = _calc_sl_tp(price_now, direction, atr, sweep, levels)
 
+    # ── Referencias de precio desde df completo (no df_ref excluyendo ultimas 3) ──
+    def _hi(d): return float(d["High"].max()) if not d.empty else None
+    def _lo(d): return float(d["Low"].min())  if not d.empty else None
+    _idx = df.index
+    if _idx.tz is None:
+        _idx = _idx.tz_localize("UTC")
+    else:
+        _idx = _idx.tz_convert("UTC")
+    _dates = _idx.normalize()
+    _last_date = _dates[-1]
+    _prev_dates = _dates[_dates < _last_date]
+    _prev_date = _prev_dates[-1] if len(_prev_dates) > 0 else None
+    _today_df = df[_dates == _last_date]
+    _yest_df  = df[_dates == _prev_date] if _prev_date is not None else pd.DataFrame()
+    _hod = _hi(_today_df)
+    _lod = _lo(_today_df)
+    _pdh = _hi(_yest_df)
+    _pdl = _lo(_yest_df)
+
     return {
         "puntos":          pts,
         "estado":          estado,
@@ -696,10 +715,10 @@ def score_setup(
         "tp":              tp,
         "price":           price_now,
         "filter_confirms": filter_confirms,
-        "hod":             levels.get("hod"),
-        "lod":             levels.get("lod"),
-        "pdh":             levels.get("pdh"),
-        "pdl":             levels.get("pdl"),
+        "hod":             _hod,
+        "lod":             _lod,
+        "pdh":             _pdh,
+        "pdl":             _pdl,
         "asia_high":       levels.get("asia_high"),
         "asia_low":        levels.get("asia_low"),
         "europe_high":     levels.get("europe_high"),
