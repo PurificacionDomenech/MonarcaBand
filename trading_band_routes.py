@@ -390,8 +390,8 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
         recent = rsi.iloc[-min(lookback, n):]
 
         # Encontrar picos locales en el RSI reciente
-        # Umbral adaptativo: pico > max(60, R1*0.95) para detectar agotamiento
-        thresh_peak = max(60.0, r1_rsi * 0.95) if r1_rsi else 60.0
+        # Umbral: pico debe entrar en zona extrema >70 (agotamiento alcista / reversal bajista)
+        thresh_peak = 70.0
         shark_peaks = []
         for i in range(1, len(recent) - 1):
             v  = float(recent.iloc[i])

@@ -734,6 +734,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
 
     # ⑤ HOD/LOD — confluencia de soporte/resistencia (0.3% umbral)
+    # + PDH/PDL (máx/mín día anterior) para referencias en alertas.
     # Sin depender de `direction` (aún no calculada). El PASO 2 descarta lo que no alinee.
     try:
         day_high = float(df["High"].iloc[-min(24, len(df)):].max()) if len(df) >= 1 else None
@@ -756,6 +757,27 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     except Exception:
         raw.append({"id": 5, "ok": False,
             "texto": "HOD/LOD no disponible", "tipo": "info"})
+
+    # PDH / PDL (día anterior) usando todo el DataFrame (no df_ref)
+    try:
+        idx = df.index
+        if idx.tz is None:
+            idx = idx.tz_localize("UTC")
+        else:
+            idx = idx.tz_convert("UTC")
+        dates = idx.normalize()
+        last_date = dates[-1]
+        all_unique_days = sorted(dates.unique())
+        prev_days = [d for d in all_unique_days if d < last_date]
+        prev_date = prev_days[-1] if prev_days else None
+        yest_df = df[dates == prev_date] if prev_date is not None else pd.DataFrame()
+        pdh = float(yest_df["High"].max()) if not yest_df.empty else None
+        pdl = float(yest_df["Low"].min())  if not yest_df.empty else None
+    except Exception:
+        pdh, pdl = None, None
+
+    bar_high = float(df["High"].iloc[n]) if "High" in df.columns else None
+    bar_low  = float(df["Low"].iloc[n])  if "Low"  in df.columns else None
 
     # ⑦ Shark Fin
     if _calc_shark_fin is not None:
@@ -963,6 +985,12 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         "alert":         alert,
         "day_context":   day_context,
         "week_context":  week_context,
+        "hod":           day_high,
+        "lod":           day_low,
+        "pdh":           pdh,
+        "pdl":           pdl,
+        "bar_high":      bar_high,
+        "bar_low":       bar_low,
         "tb_cross":      False,
     }
 
