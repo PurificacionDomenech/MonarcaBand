@@ -660,13 +660,22 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
                 recent_divs = [d for d in recent_divs if d["type"] in ("bear", "hbear")]
 
         if recent_divs:
+            # Sumar puntos según niveles detectados (N1=1, N2=1, N3=1, acumuladas)
+            div_pts = 0
+            div_levels = set()
+            for d in recent_divs:
+                lvl = d.get("level", 1)
+                if lvl not in div_levels:
+                    div_levels.add(lvl)
+                    div_pts += 1
+            div_pts = min(div_pts, 3)  # max 3 pts
             best = recent_divs[0]
             div_type = best["type"]
             div_dir = "bullish" if div_type in ("bull", "hbull") else "bearish" if div_type in ("bear", "hbear") else "info"
             div_data = best
             raw.append({"id": 2, "ok": True,
                 "texto": f"Divergencia RSI {div_type.upper()} N{best.get('level',1)} (RSI {best.get('rsi',0):.1f})",
-                "tipo": div_dir})
+                "tipo": div_dir, "pts": div_pts})
     if not div_data:
         raw.append({"id": 2, "ok": False,
             "texto": "Sin divergencias recientes", "tipo": "info"})
@@ -683,7 +692,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
                        f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
             fvg_data = fvg
-            raw.append({"id": 3, "ok": True, "texto": fvg_text, "tipo": fvg_dir})
+            raw.append({"id": 3, "ok": True, "texto": fvg_text, "tipo": fvg_dir, "pts": 2})
             break
     if not fvg_data:
         raw.append({"id": 3, "ok": False,
@@ -744,10 +753,10 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             near_hod = price >= day_high * 0.997
             if near_lod:
                 raw.append({"id": 5, "ok": True,
-                    "texto": f"LOD {day_low:.4g} — precio tocando soporte", "tipo": "bullish"})
+                    "texto": f"LOD {day_low:.4g} — precio tocando soporte", "tipo": "bullish", "pts": 2})
             if near_hod:
                 raw.append({"id": 5, "ok": True,
-                    "texto": f"HOD {day_high:.4g} — precio tocando resistencia", "tipo": "bearish"})
+                    "texto": f"HOD {day_high:.4g} — precio tocando resistencia", "tipo": "bearish", "pts": 2})
             if not near_lod and not near_hod:
                 raw.append({"id": 5, "ok": False,
                     "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
@@ -914,12 +923,14 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
                     entry["ok"] = False
                     entry["descartada"] = True
                 else:
-                    puntos += 1
-                    # Sumar puntos extra de aleta tiburón (el punto base ya se contó)
+                    # Puntos según peso de cada confluencia (divergencias=1-3, FVG=2, HOD/LOD=2, M/W=1, etc.)
+                    base_pts = c.get("pts", 1)
+                    puntos += base_pts
+                    # Sumar puntos extra de aleta tiburón (crossed=+2, exceeded=+4)
                     if c.get("pts_extra", 0) > 0:
-                        puntos += c["pts_extra"] - 1
+                        puntos += c["pts_extra"]
             elif c["ok"] and c["tipo"] == "neutral":
-                puntos += 1
+                puntos += c.get("pts", 1)
             confluencias_final.append(entry)
 
     # ── PASO 3: calcular contexto del día/semana ──
@@ -952,15 +963,15 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         estado = "CONTRADICCIÓN"
         nivel  = "info"
         alert  = False
-    elif puntos >= 4:
+    elif puntos >= 7:
         estado = "FAVORABLE"
         nivel  = direction
         alert  = True
-    elif puntos == 3:
+    elif puntos >= 5:
         estado = "INTERESANTE"
         nivel  = direction
-        alert  = True
-    elif puntos == 2:
+        alert  = False
+    elif puntos >= 3:
         estado = "CONSIDERAR"
         nivel  = "info"
         alert  = False
@@ -1663,12 +1674,12 @@ async def _update_rsi_watchlist():
                 if c["id"] == 1:
                     continue
                 if c.get("ok") and not c.get("descartada") and not c.get("conflicto"):
-                    puntos_sin_rsi += 1
+                    puntos_sin_rsi += c.get("pts", 1)
 
             rsi_ya_extremo = (direction == "bullish" and rsi <= 30) or \
                              (direction == "bearish" and rsi >= 70)
 
-            if puntos_sin_rsi >= 3 and not rsi_ya_extremo:
+            if puntos_sin_rsi >= 5 and not rsi_ya_extremo:
                 new_watchlist[t.upper()] = {
                     "direction": direction,
                     "puntos_sin_rsi": puntos_sin_rsi,
@@ -1746,49 +1757,6 @@ async def _rsi_realtime_check():
 
             cfg = info["cfg"]
 
-            # ─── Detección inmediata de Aleta Tiburón (Shark Fin) ───
-            shark = None
-            if _calc_shark_fin is not None:
-                df_shark, _ = await async_download_rb(ticker)
-                if not df_shark.empty:
-                    shark = _calc_shark_fin(df_shark)
-                    if shark.get("alert_immediate") and shark.get("phase") in ("exceeded", "crossed"):
-                        tipo  = shark["shark_tipo"]
-                        phase = shark["phase"]
-                        # ── Solo alertar si la fase CAMBIÓ vs la anterior ──
-                        prev = _shark_phase_cache.get(ticker)
-                        phase_changed = (prev is None) or (prev.get("tipo") != tipo) or (prev.get("phase") != phase)
-                        if phase_changed:
-                            if phase == "exceeded":
-                                emoji = "⚡🦈"
-                                msg_txt = (f"[{ticker}] {emoji} ALETA TIBURÓN EXTREMA\n"
-                                           f"RSI pico {shark['shark_rsi_peak']:.1f} superó "
-                                           f"divergencia R1={shark['shark_div_r1']:.1f}\n"
-                                           f"Agotamiento máximo — señal inmediata")
-                                pts_label = "+4 pts"
-                            else:
-                                emoji = "🦈"
-                                msg_txt = (f"[{ticker}] {emoji} Aleta tiburón confirmada\n"
-                                           f"RSI cruzó {'<70' if tipo == 'bearish' else '>30'} "
-                                           f"tras divergencia — señal confirmada")
-                                pts_label = "+2 pts"
-
-                            ts_now = pd.Timestamp.now(tz="UTC")
-                            alertas_rsi.setdefault(ticker, []).append({
-                                "nivel":        tipo,
-                                "msg":          msg_txt,
-                                "hora":         ts_now.strftime("%d/%m %H:%M"),
-                                "ts_utc_iso":   ts_now.isoformat(),
-                                "dia_num":      ts_now.weekday(),
-                                "dia_name":     ts_now.strftime("%A"),
-                                "resultado":    None,
-                                "components_ctx": None,
-                                "shark_data":   shark,
-                                "pts_label":    pts_label,
-                            })
-                            _shark_phase_cache[ticker] = {"tipo": tipo, "phase": phase, "ts": now}
-                            print(f"[shark] {emoji} {ticker} — {phase} (nuevo) RSI={shark['shark_rsi_peak']:.1f}")
-
             df_rb, _ = await async_download_rb(ticker)
             if df_rb.empty:
                 continue
@@ -1818,19 +1786,19 @@ async def _rsi_realtime_check():
                         c.pop("descartada", None)
                         c.pop("conflicto", None)
 
-            puntos = sum(1 for c in resultado["confluencias"]
+            puntos = sum(c.get("pts", 1) for c in resultado["confluencias"]
                          if c.get("ok") and not c.get("descartada") and not c.get("conflicto"))
             resultado["puntos"] = puntos
-            resultado["estado"] = "FAVORABLE" if puntos >= 4 else "INTERESANTE"
+            resultado["estado"] = "FAVORABLE" if puntos >= 7 else ("INTERESANTE" if puntos >= 5 else "CONSIDERAR")
             resultado["nivel"] = direction
-            resultado["alert"] = puntos >= 3
+            resultado["alert"] = puntos >= 7
             resultado["rsi_realtime"] = True
 
             if resultado["alert"]:
                 ts_now = pd.Timestamp.now(tz="UTC")
                 alertas_rsi[ticker] = [{
                     "nivel": direction,
-                    "msg": f"[{ticker}] ⚡ RSI EN ZONA — {resultado['estado']}",
+                    "msg": f"[{ticker}] ⚡ PUNTO CALIENTE — {resultado['estado']} ({puntos} pts)",
                     "hora": ts_now.strftime("%d/%m %H:%M"),
                     "ts_utc_iso": ts_now.isoformat(),
                     "dia_num": ts_now.weekday(),
@@ -1840,8 +1808,7 @@ async def _rsi_realtime_check():
                 }]
                 _sent_cache[dedup_key] = now
                 del _rsi_watchlist[ticker]
-                print(f"[rsi-watch] ⚡ {ticker} RSI={rsi_now:.1f} cruzó zona extrema "
-                      f"({direction}) → ALERTA INMEDIATA")
+                print(f"[rsi-watch] ⚡ {ticker} RSI={rsi_now:.1f} zona extrema + {puntos}pts → ALERTA INMEDIATA")
 
         except Exception as e:
             print(f"[rsi-watch] Error revisando RSI de {ticker}: {e}")
