@@ -886,7 +886,11 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     activas_bullish = [c for c in raw if c["ok"] and c["tipo"] == "bullish"]
     activas_bearish = [c for c in raw if c["ok"] and c["tipo"] == "bearish"]
 
-    FUERTES = {1, 2, 4}   # RSI + Divergencias + Patrones son señales fuertes
+    # ── Dirección dominante ──
+    # Señales FUERTES: Divergencias (2) + Patrones M/W/HCH (4) + Shark Fin (7)
+    # RSI (1) es de contexto (zona) — nunca determina dirección por sí solo.
+    # FVG (3) y HOD/LOD (5) son confirmaciones direccionales.
+    FUERTES = {2, 4, 7}
     bullish_fuertes = [c for c in activas_bullish if c["id"] in FUERTES]
     bearish_fuertes = [c for c in activas_bearish if c["id"] in FUERTES]
 
@@ -903,6 +907,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
                 entry["ok"] = False
             confluencias_final.append(entry)
     else:
+        # Dirección: fuertes primero, luego todas
         if bullish_fuertes and not bearish_fuertes:
             direction = "bullish"
         elif bearish_fuertes and not bullish_fuertes:
@@ -920,10 +925,10 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             entry = dict(c)
             if c["ok"] and c["tipo"] not in ("neutral", "info"):
                 if direction in ("bullish", "bearish") and c["tipo"] != direction:
+                    # RSI (1) se descarta si contradice dirección fuerte — no puntúa
                     entry["ok"] = False
                     entry["descartada"] = True
                 else:
-                    # Puntos según peso de cada confluencia (divergencias=1-3, FVG=2, HOD/LOD=2, M/W=1, etc.)
                     base_pts = c.get("pts", 1)
                     puntos += base_pts
                     # Sumar puntos extra de aleta tiburón (crossed=+2, exceeded=+4)
