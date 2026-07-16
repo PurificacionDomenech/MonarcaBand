@@ -1,0 +1,3 @@
+- [Alert accuracy strictness](alert-accuracy.md) — detectors must only score REAL confluences, not "forming" or near-misses
+- [Shark Fin 24-candle window](shark-fin-window.md) — calculate on last 24 candles only to avoid mixing historical signals with current candle
+- [Deduplication by exact candle timestamp](dedup-candle-timestamp.md) — each candle alerts once, not by price level

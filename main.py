@@ -684,10 +684,19 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     fvg_data = None
     if _detect_fvg is not None:
         fvgs = _detect_fvg(df, max_zonas=10)
-        # Ordenar por distancia al precio actual: más cercano primero
+        # SÓLO FVG que el precio ACTUAL toca o está dentro — no si está lejos.
+        # active: touched=True (dentro o tocando), frozen=False (no rota).
+        # Filtro adicional: precio dentro de la zona ±0.5% del rango del FVG.
         active = [f for f in fvgs if f.get("touched") and not f.get("frozen")]
+        # Ordenar por proximidad al precio
         active.sort(key=lambda f: abs(price - (f["top"]+f["bottom"])/2))
         for fvg in active:
+            fvg_mid = (fvg["top"] + fvg["bottom"]) / 2
+            fvg_range = fvg["top"] - fvg["bottom"]
+            rel_dist = abs(price - fvg_mid) / max(fvg_range, 1e-12)
+            # Precio debe estar dentro o a menos de 0.5% del rango del FVG
+            if rel_dist > 0.005:
+                continue
             fvg_dir = "bullish" if fvg["direction"] == "bull" else "bearish"
             fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
                        f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
@@ -704,8 +713,9 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         pat = _calc_pattern_mw(df)
         m_pat = pat.get("M")
         w_pat = pat.get("W")
-        m_ok = m_pat and m_pat.get("estado") in ("confirmado", "formando_p2")
-        w_ok = w_pat and w_pat.get("estado") in ("confirmado", "formando_v2")
+        # SÓLO patrones confirmados — "formándose" no cuenta
+        m_ok = m_pat and m_pat.get("estado") == "confirmado"
+        w_ok = w_pat and w_pat.get("estado") == "confirmado"
         # Elegir el más reciente por timestamp de pivote principal
         def _ts(p):
             if not p: return 0
@@ -730,13 +740,14 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             pattern_data = w_pat
     if _calc_pattern_hch is not None and not pattern_data:
         hch = _calc_pattern_hch(df)
-        if hch.get("HCH") and hch["HCH"].get("estado") in ("confirmado", "formando_hd"):
+        # SÓLO HCH confirmado — "formando_hd" no cuenta
+        if hch.get("HCH") and hch["HCH"].get("estado") == "confirmado":
             raw.append({"id": 4, "ok": True,
-                "texto": f"HCH bajista {hch['HCH']['estado']}", "tipo": "bearish"})
+                "texto": f"HCH bajista confirmado", "tipo": "bearish"})
             pattern_data = hch["HCH"]
-        elif hch.get("HCH_inv") and hch["HCH_inv"].get("estado") in ("confirmado", "formando_hd"):
+        elif hch.get("HCH_inv") and hch["HCH_inv"].get("estado") == "confirmado":
             raw.append({"id": 4, "ok": True,
-                "texto": f"HCH invertido alcista {hch['HCH_inv']['estado']}", "tipo": "bullish"})
+                "texto": f"HCH invertido confirmado", "tipo": "bullish"})
             pattern_data = hch["HCH_inv"]
     if not pattern_data:
         raw.append({"id": 4, "ok": False,
@@ -749,15 +760,16 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         day_high = float(df["High"].iloc[-min(24, len(df)):].max()) if len(df) >= 1 else None
         day_low  = float(df["Low"].iloc[-min(24, len(df)):].min())  if len(df) >= 1 else None
         if day_high is not None and day_low is not None:
-            near_lod = price <= day_low * 1.003
-            near_hod = price >= day_high * 0.997
-            if near_lod:
+            # HOD/LOD: sólo si la VELA EVALUADA tocó realmente el máximo/mínimo del día.
+            vela_toca_lod = bar_low is not None and bar_low <= day_low * 1.001
+            vela_toca_hod = bar_high is not None and bar_high >= day_high * 0.999
+            if vela_toca_lod:
                 raw.append({"id": 5, "ok": True,
                     "texto": f"LOD {day_low:.4g} — precio tocando soporte", "tipo": "bullish", "pts": 2})
-            if near_hod:
+            if vela_toca_hod:
                 raw.append({"id": 5, "ok": True,
                     "texto": f"HOD {day_high:.4g} — precio tocando resistencia", "tipo": "bearish", "pts": 2})
-            if not near_lod and not near_hod:
+            if not vela_toca_lod and not vela_toca_hod:
                 raw.append({"id": 5, "ok": False,
                     "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
         else:
