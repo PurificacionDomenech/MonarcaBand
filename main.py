@@ -788,9 +788,11 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     bar_high = float(df["High"].iloc[n]) if "High" in df.columns else None
     bar_low  = float(df["Low"].iloc[n])  if "Low"  in df.columns else None
 
-    # ⑦ Shark Fin
+    # ⑦ Shark Fin — calcular SOLO sobre las últimas 24 velas para que la alerta
+    # corresponda al momento de la vela evaluada, no a divergencias históricas.
     if _calc_shark_fin is not None:
-        shark = _calc_shark_fin(df)
+        df_shark = df.iloc[-min(24, len(df)):].copy()
+        shark = _calc_shark_fin(df_shark)
     else:
         shark = {
             "shark_bear": False, "shark_bull": False,
@@ -1279,10 +1281,10 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                     dia_num    = -1
                     dia_name   = ""
 
-                # Filtro de frescura: fantasma <=15min permitida, velas reales <=12h
+                # Filtro de frescura: vela histórica <=90min (3 velas 1h de margen)
                 try:
                     age_min = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 60
-                    max_age_min = 60   # 1 hora
+                    max_age_min = 90   # 1.5h — cubre gap entre ejecuciones del scheduler
                     if age_min > max_age_min:
                         continue
                 except Exception:
@@ -1297,9 +1299,9 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                 )
 
                 if resultado and resultado.get("alert"):
-                    # Clave de deduplicación: ticker + estado + precio redondeado
-                    key = f"{t}_{resultado['estado']}_{round(resultado['precio'], -1)}"
-                    if now - _sent_cache.get(key, 0) > _DEDUP_SECONDS:
+                    # Deduplicación por timestamp EXACTO de la vela — cada vela alerta una sola vez
+                    vela_key = f"VELA_{t}_{ts_utc_iso}"
+                    if vela_key not in _sent_cache:
                         nuevas.append({
                             "nivel":          resultado["nivel"],
                             "msg":            f"[{t.upper()}] {resultado['estado']} {hora}".strip(),
@@ -1310,7 +1312,7 @@ async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                             "resultado":      resultado,
                             "components_ctx": components_ctx,
                         })
-                        _sent_cache[key] = now
+                        _sent_cache[vela_key] = now
             if max_per_ticker > 0:
                 nuevas = nuevas[:max_per_ticker]
             if nuevas:
