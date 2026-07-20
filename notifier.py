@@ -1196,7 +1196,7 @@ def _fmt_price(p: float) -> str:
 def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     """
     Construye el mensaje HTML de Telegram segun especificacion exacta.
-    Formato: [EMOJI] MATRIX LAB - [ESTADO]
+    Formato: [EMOJI] TRADING BAND - [ESTADO]
     Puntuacion maxima: 18 pts
     """
     nivel     = result.get("nivel_alerta", "normal")
@@ -1256,7 +1256,7 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
         setup_desc = f"trampa sobre {level_name}"
 
     out_lines = [
-        f"{emoji_estado} MATRIX LAB - {estado_str}",
+        f"{emoji_estado} TRADING BAND - {estado_str}",
         "",
         f"📊 {ticker}  |  1H  |  {price_str}",
         f"🕐 {now_str}",

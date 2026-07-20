@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from db import get_conn
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "monarca-secret-key-change-in-prod")
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "trading-band-secret-key-change-in-prod")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 

@@ -26,7 +26,7 @@ class UserOut(BaseModel):
     access_tradingview: bool
     access_indicators: bool
 
-VIP_INVITE_CODE = "MONARCA-VIP"
+VIP_INVITE_CODE = "TRADINGBAND-VIP"
 VIP_MAX_SLOTS = 10
 
 @router.post("/register")

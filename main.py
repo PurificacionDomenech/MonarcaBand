@@ -602,7 +602,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     Evalúa las confluencias principales con validación DIRECCIONAL.
 
     NUEVO FOCO: RSI, Divergencias, Vacíos (FVG), Patrones, HOD/LOD
-    EMAs y MonarcaBand se mantienen en chart pero NO puntúan en confluencias.
+    EMAs y TradingBand se mantienen en chart pero NO puntúan en confluencias.
 
     Direcciones:
       ① RSI < 47  → bullish  |  RSI > 53 → bearish
@@ -1151,7 +1151,7 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                     frac_touch = ft["touch"]
                     frac_info  = ft
 
-                # Toque de banda Monarca (precio toca Trigger o Average)
+                # Toque de TradingBand (precio toca Trigger o Average)
                 band_touch = False
                 band_which = ""
                 h_val = float(high.iloc[i])
@@ -1190,7 +1190,7 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
                 if band_touch:
                     confluencias.append({
                         "id": "tb_band",
-                        "texto": f"Precio toca banda Monarca ({band_which})",
+                        "texto": f"Precio toca banda TradingBand ({band_which})",
                         "ok": True, "tipo": direction,
                     })
 
@@ -1568,7 +1568,7 @@ async def scheduled_watch():
 
     # 1) Alertas del sistema de confluencias actual (EMA/RSI/FVG/patrones/div)
     # └── TradingBand antiguo eliminado: no se usan Trigger/Average, fractales, ni
-    #     “Precio toca banda Monarca” en las alertas.  
+    #     “Precio toca banda TradingBand” en las alertas.  
 
     # 2) Alertas clásicas de confluencias EMA/RSI/FVG/patrones
     alerts_by_ticker = await _check_tickers(
@@ -1620,7 +1620,7 @@ async def daily_catchup():
         print("[catchup] Fin de semana — revisando solo BTC-USD")
 
     # 1) Sistema TradingBand antiguo DESACTIVADO (no se envían alertas de
-    #    Trigger/Average, fractales, ni “Precio toca banda Monarca”).
+    #    Trigger/Average, fractales, ni “Precio toca banda TradingBand”).
 
     # 2) Alertas del sistema actual
     print("[catchup] Revisando vela 1h actual (máx 1h de antigüedad)…")
@@ -1940,7 +1940,7 @@ if HAS_SCHEDULER:
         try:
             scheduler = AsyncIOScheduler()
             scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
-            # Job de TB confluencias (MonarcaBand antiguo) eliminado del scheduler
+            # Job de TB confluencias (TradingBand antiguo) eliminado del scheduler
             scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
@@ -2375,7 +2375,7 @@ async def _compute_row(ticker: str) -> dict:
             pass
     confl = evaluate_confluencias(df, ticker=key, cfg=cfg, opens=opens, components_ctx=row_components_ctx)
 
-    # ¿Cruce reciente de MonarcaBand en las últimas 2 velas?
+    # ¿Cruce reciente de TradingBand en las últimas 2 velas?
     tb_cross_recent = False
     if "TB_TRIGGER" in df.columns and "TB_AVERAGE" in df.columns and len(df) >= 3:
         for i in range(2):
@@ -2534,19 +2534,6 @@ async def sparkline(ticker: str):
         return {"closes": [float(c) for c in closes], "pct": round(pct, 2)}
     except:
         return {"closes": [], "pct": 0}
-
-
-# ─── TRADING BAND RUTAS ──────────────────────────────────────
-
-
-@app.get("/trading-band")
-async def trading_band_splash():
-    return FileResponse("templates/trading_band_splash.html")
-
-
-@app.get("/trading-band/app")
-async def trading_band_app():
-    return FileResponse("templates/trading_band.html")
 
 
 if __name__ == "__main__":
