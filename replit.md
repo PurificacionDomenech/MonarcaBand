@@ -93,18 +93,21 @@ The system evaluates up to 6 confluences with **directional validation**:
 
 | # | Confluence | Direction | Points |
 |---|---|---|---|
-| ① | RSI < 47 / > 53 | bullish (comprar barato) / bearish (vender caro) | 1 |
-| ② | Divergencia RSI activa | bullish / bearish según tipo | 1 |
-| ③ | Vacío FVG activo cerca del precio | bullish / bearish según dirección | 1 |
-| ④ | Patrón M/W/HCH confirmado | bearish / bullish | 1 |
-| ⑤ | HOD/LOD del día | precio a 0.3% del LOD (bullish) o HOD (bearish) | 1 |
-| ⑥ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
+| ① | RSI <30 / >70 (extremo) | bullish (sobreventa máxima) / bearish (sobrecompra máxima) | +2 |
+| ① | RSI 30-44 / 56-70 (interés) | bullish (zona de interés) / bearish (zona de interés) | +1 |
+| ① | RSI 45-55 (neutro) | tierra de nadie | 0 |
+| ② | Divergencia RSI | bullish / bearish según tipo (N1 +1, N2 +2, N3 +3) | +1 a +3 |
+| ③ | Vacío FVG activo cerca del precio | bullish / bearish según dirección | +1 |
+| ④ | Soportes (HOD/LOD/PDH/PDL/Weekly) | bullish / bearish según dirección | +1 por toque |
+| ⑤ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
 
 **Directional rules:**
-- Strong signals (①②④⑤) determine direction; if they conflict → CONTRADICCIÓN
-- Weak/secondary signals (③) in opposite direction are **descartada** (discarded), not counted
-- Shark Fin (⑥) only counts when aligned with strong direction; +2 for crossed, +4 for exceeded
-- FAVORABLE: ≥4 points aligned | INTERESANTE: 3 | CONSIDERAR: 2 | NO AHORA: ≤1
+- Strong signals (② Divergencias + ⑤ Shark Fin) determine direction; if they conflict → CONTRADICCIÓN
+- RSI (①) es de contexto (zona) — nunca determina dirección por sí solo
+- FVG (③) y Soportes (④) son confirmaciones direccionales
+- Patrones M/W/HCH **eliminados** — creaban contradicciones falsas
+- Shark Fin (⑤) solo cuenta cuando aligned; +2 crossed, +4 exceeded
+- FAVORABLE: ≥7 puntos (alerta) | INTERESANTE: 5-6 | CONSIDERAR: 3-4 | NO AHORA: ≤2
 - Alertas indican si la vela tocó máximo/mínimo de la sesión asiática (00-08 UTC) o europea (08-16 UTC)
 
 **Schema `notification_prefs`**: `user_id, telegram_chat_id, telegram_enabled, email_address, email_enabled, tickers, timezone, created_at, id` — NO `language` column.
