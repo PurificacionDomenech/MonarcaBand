@@ -709,51 +709,13 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 3, "ok": False,
             "texto": "Sin vacíos FVG activos", "tipo": "info"})
 
-    # ④ Patrones M/W/HCH — sólo el más reciente según timestamp del pivote
+    # ④ Patrones M/W/HCH — ELIMINADOS del scoring.
+    # Los patrones crean contradicciones falsas con la estrategia de
+    # liquidez + divergencias + FVG. Se mantienen en chart visual pero
+    # NO puntúan ni determinan dirección en confluencias.
     pattern_data = None
-    if _calc_pattern_mw is not None:
-        pat = _calc_pattern_mw(df)
-        m_pat = pat.get("M")
-        w_pat = pat.get("W")
-        # SÓLO patrones confirmados — "formándose" no cuenta
-        m_ok = m_pat and m_pat.get("estado") == "confirmado"
-        w_ok = w_pat and w_pat.get("estado") == "confirmado"
-        # Elegir el más reciente por timestamp de pivote principal
-        def _ts(p):
-            if not p: return 0
-            # p1_x (M) o v2_x (W) — último pivote del patrón
-            return p.get("p2_x") or p.get("v2_x") or p.get("p1_x") or p.get("v1_x") or 0
-        if m_ok and w_ok:
-            if _ts(w_pat) > _ts(m_pat):
-                raw.append({"id": 4, "ok": True,
-                    "texto": f"Patrón W (doble suelo) {w_pat['estado']}", "tipo": "bullish"})
-                pattern_data = w_pat
-            else:
-                raw.append({"id": 4, "ok": True,
-                    "texto": f"Patrón M (doble techo) {m_pat['estado']}", "tipo": "bearish"})
-                pattern_data = m_pat
-        elif m_ok:
-            raw.append({"id": 4, "ok": True,
-                "texto": f"Patrón M (doble techo) {m_pat['estado']}", "tipo": "bearish"})
-            pattern_data = m_pat
-        elif w_ok:
-            raw.append({"id": 4, "ok": True,
-                "texto": f"Patrón W (doble suelo) {w_pat['estado']}", "tipo": "bullish"})
-            pattern_data = w_pat
-    if _calc_pattern_hch is not None and not pattern_data:
-        hch = _calc_pattern_hch(df)
-        # SÓLO HCH confirmado — "formando_hd" no cuenta
-        if hch.get("HCH") and hch["HCH"].get("estado") == "confirmado":
-            raw.append({"id": 4, "ok": True,
-                "texto": f"HCH bajista confirmado", "tipo": "bearish"})
-            pattern_data = hch["HCH"]
-        elif hch.get("HCH_inv") and hch["HCH_inv"].get("estado") == "confirmado":
-            raw.append({"id": 4, "ok": True,
-                "texto": f"HCH invertido confirmado", "tipo": "bullish"})
-            pattern_data = hch["HCH_inv"]
-    if not pattern_data:
-        raw.append({"id": 4, "ok": False,
-            "texto": "Sin patrones M/W/HCH activos", "tipo": "info"})
+    raw.append({"id": 4, "ok": False,
+        "texto": "Patrones desactivados del scoring", "tipo": "info"})
 
     # ⑤ HOD/LOD — confluencia de soporte/resistencia (0.3% umbral)
     # + PDH/PDL (máx/mín día anterior) para referencias en alertas.
@@ -903,10 +865,11 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     activas_bearish = [c for c in raw if c["ok"] and c["tipo"] == "bearish"]
 
     # ── Dirección dominante ──
-    # Señales FUERTES: Divergencias (2) + Patrones M/W/HCH (4) + Shark Fin (7)
+    # Señales FUERTES: Divergencias (2) + Shark Fin (7)
     # RSI (1) es de contexto (zona) — nunca determina dirección por sí solo.
     # FVG (3) y HOD/LOD (5) son confirmaciones direccionales.
-    FUERTES = {2, 4, 7}
+    # Patrones M/W/HCH eliminados — creaban contradicciones falsas.
+    FUERTES = {2, 7}
     bullish_fuertes = [c for c in activas_bullish if c["id"] in FUERTES]
     bearish_fuertes = [c for c in activas_bearish if c["id"] in FUERTES]
 
