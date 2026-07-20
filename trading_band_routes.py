@@ -196,8 +196,8 @@ def detect_divergences_level(
             prev_bar, prev_rsi, prev_price = prev_pl
             bars_between = pivot_bar - prev_bar
             if _in_range(bars_between, rn_min, rn_max):
-                # SÓLO divergencias con RSI del pivote reciente en zona extrema:
-                # bull: RSI < 35 (sobreventa)  |  bear: RSI > 65 (sobrecompra)
+                # Divergencias REGULARES (reversal): requieren RSI en zona extrema
+                # bull:  precio lower low + RSI higher low  →  RSI pivote < 35 (sobreventa)
                 if price_cur < prev_price and rsi_cur > prev_rsi and rsi_cur < 35:
                     divs.append({"type": "bull", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
@@ -206,14 +206,16 @@ def detect_divergences_level(
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
                         "in_zone": True})
-                elif price_cur > prev_price and rsi_cur < prev_rsi and rsi_cur < 35:
+                # Divergencias OCULTAS (continuación): NO requieren zona extrema
+                # hbull: precio higher low + RSI lower low  →  continuación alcista
+                elif price_cur > prev_price and rsi_cur < prev_rsi:
                     divs.append({"type": "hbull", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
                         "time": times[pivot_bar].isoformat(),
                         "time_prev": times[prev_bar].isoformat(),
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
-                        "in_zone": True})
+                        "in_zone": rsi_cur < 40})
         prev_pl = (pivot_bar, rsi_cur, price_cur)
 
     prev_ph = None
@@ -229,8 +231,8 @@ def detect_divergences_level(
             prev_bar, prev_rsi, prev_price = prev_ph
             bars_between = pivot_bar - prev_bar
             if _in_range(bars_between, rn_min, rn_max):
-                # SÓLO divergencias con RSI del pivote reciente en zona extrema:
-                # bear: RSI > 65 (sobrecompra)  |  hbear: RSI > 65 (sobrecompra)
+                # Divergencias REGULARES (reversal): requieren RSI en zona extrema
+                # bear:  precio higher high + RSI lower high  →  RSI pivote > 65 (sobrecompra)
                 if price_cur > prev_price and rsi_cur < prev_rsi and rsi_cur > 65:
                     divs.append({"type": "bear", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
@@ -239,14 +241,16 @@ def detect_divergences_level(
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
                         "in_zone": True})
-                elif price_cur < prev_price and rsi_cur > prev_rsi and rsi_cur > 65:
+                # Divergencias OCULTAS (continuación): NO requieren zona extrema
+                # hbear: precio lower high + RSI higher high  →  continuación bajista
+                elif price_cur < prev_price and rsi_cur > prev_rsi:
                     divs.append({"type": "hbear", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
                         "time": times[pivot_bar].isoformat(),
                         "time_prev": times[prev_bar].isoformat(),
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
-                        "in_zone": True})
+                        "in_zone": rsi_cur > 60})
         prev_ph = (pivot_bar, rsi_cur, price_cur)
 
     return divs

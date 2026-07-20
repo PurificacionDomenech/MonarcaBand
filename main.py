@@ -617,6 +617,8 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
 
     n     = len(df) - 1
     price = float(df["Close"].iloc[n])
+    bar_high = float(df["High"].iloc[n]) if "High" in df.columns else None
+    bar_low  = float(df["Low"].iloc[n])  if "Low"  in df.columns else None
     es    = cfg["ema_short"] if cfg else 200
     el    = cfg["ema_long"]  if cfg else 800
 

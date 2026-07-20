@@ -554,8 +554,9 @@ function buildGrid(){
   const sorted=[...AA].filter(a=>!a.hidden).sort((a,b)=>{
     const aF=wl.has(a.t)?0:1, bF=wl.has(b.t)?0:1;
     if(aF!==bF)return aF-bF;
-    const aS=rowScores[a.t]??99, bS=rowScores[b.t]??99;
-    return aS-bS;
+    // Ordenar por puntos reales del backend: MAYOR arriba
+    const aP=rowScores[a.t]??0, bP=rowScores[b.t]??0;
+    return bP-aP;
   });
   let lg='';
   sorted.forEach(a=>{
@@ -715,8 +716,9 @@ function calcEstado(d){
   // Usar puntuación calculada por el backend (evaluate_confluencias)
   if(d.confluencias_estado!=null){
     const e=d.confluencias_estado;
-    const sMap={FAVORABLE:0,INTERESANTE:1,CONSIDERAR:2,'NO AHORA':3};
-    if(d.ticker)rowScores[d.ticker]=sMap[e]??3;
+    // Guardar puntos reales del backend para ordenar la tabla
+    const realPts=d.confluencias_puntos??0;
+    if(d.ticker)rowScores[d.ticker]=realPts;
     const cls={FAVORABLE:'favorable',INTERESANTE:'interesante',CONSIDERAR:'considerar','NO AHORA':'no_favorable'}[e]||'no_favorable';
     return`<span class="badge ${cls}">${e}</span>`;
   }
@@ -726,7 +728,7 @@ function calcEstado(d){
   if(d.ema_short!=null&&d.ema_long!=null){if(d.ema_short>d.ema_long)pts+=1}
   if(d.tb_signal==='bull')pts+=1;
   if(pts>=4){s=0}else if(pts===3){s=1}else if(pts===2){s=2}else{s=3}
-  if(d.ticker)rowScores[d.ticker]=s;
+  if(d.ticker)rowScores[d.ticker]=pts;
   const labels=['FAVORABLE','INTERESANTE','CONSIDERAR','NO AHORA'];
   const classes=['favorable','interesante','considerar','no_favorable'];
   return`<span class="badge ${classes[s]}">${labels[s]}</span>`;
