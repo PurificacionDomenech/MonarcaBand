@@ -605,7 +605,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     EMAs y TradingBand se mantienen en chart pero NO puntúan en confluencias.
 
     Direcciones:
-      ① RSI < 47  → bullish  |  RSI > 53 → bearish
+      ① RSI <30 o >70 → extremo (+2)  |  RSI 30-44 / 56-70 → interés (+1)  |  45-55 → neutro
       ② Divergencia RSI activa → bullish/bearish según tipo
       ③ Vacío FVG activo cerca del precio → bullish/bearish según dirección
       ④ Patrón M/W/HCH confirmado → bearish/bullish
@@ -634,16 +634,24 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
 
     raw = []
 
-    # ① RSI — comprar barato (<47) o vender caro (>53)
-    if rsi < 47:
+    # ① RSI — zona de interés para reversión
+    # <30 o >70: extremo (+2 pts)  |  30-44 / 56-70: zona de interés (+1 pt)
+    # 45-55: tierra de nadie (0 pts)
+    if rsi < 30:
         raw.append({"id": 1, "ok": True,
-            "texto": f"RSI bajo ({rsi:.1f}) → favorable para largos", "tipo": "bullish"})
-    elif rsi > 53:
+            "texto": f"⚡ RSI extremo {rsi:.1f} (<30) → sobreventa máxima", "tipo": "bullish", "pts": 2})
+    elif rsi < 45:
         raw.append({"id": 1, "ok": True,
-            "texto": f"RSI alto ({rsi:.1f}) → favorable para cortos", "tipo": "bearish"})
+            "texto": f"RSI bajo ({rsi:.1f}) → favorable para largos", "tipo": "bullish", "pts": 1})
+    elif rsi > 70:
+        raw.append({"id": 1, "ok": True,
+            "texto": f"⚡ RSI extremo {rsi:.1f} (>70) → sobrecompra máxima", "tipo": "bearish", "pts": 2})
+    elif rsi > 55:
+        raw.append({"id": 1, "ok": True,
+            "texto": f"RSI alto ({rsi:.1f}) → favorable para cortos", "tipo": "bearish", "pts": 1})
     else:
         raw.append({"id": 1, "ok": False,
-            "texto": f"RSI neutro ({rsi:.1f})", "tipo": "info"})
+            "texto": f"RSI neutro ({rsi:.1f})", "tipo": "info", "pts": 0})
 
     # ② Divergencias RSI (3 niveles)
     div_data = None
