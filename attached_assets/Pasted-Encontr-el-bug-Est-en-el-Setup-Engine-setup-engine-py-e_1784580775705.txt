@@ -1,0 +1,56 @@
+Encontré el bug. Está en el Setup Engine (setup_engine.py), específicamente en cómo se valida y puntúa la divergencia RSI — que es justo el primer "filtro duro" de tu estrategia.
+
+El problema
+
+Tu documento dice:
+
+FILTRO DURO ① — Divergencia RSI activa (mínimo Nivel 1)
+...
+N2 sin N1 no puntúa. N3 sin N1 y N2 no puntúa.
+
+Pero el código actual en detect_active_divergence() deja pasar el filtro con N1 O N2 indistintamente:
+
+python
+lb_mandatory = {1: 6, 2: 11}   # ← acepta N2 como si fuera "mínimo N1"
+
+Como N1 y N2 se detectan con pivotes de distinto lookback (5 velas vs 10 velas), pueden existir por separado — un activo puede tener una divergencia N2 válida sin tener N1. Con el código actual, ese caso pasa el filtro duro igualmente (cuando debería ser un STOP), y encima en score_setup() la puntuación de divergencia también ignora la dependencia:
+
+python
+div_pts = 0
+if has_n1: div_pts += 1
+if has_n2: div_pts += 1   # ← puntúa aunque has_n1 sea False
+if has_n3: div_pts += 2   # ← puntúa aunque has_n1/has_n2 sean False
+
+Resultado: te llegan alertas de setups que no deberían haber pasado el filtro y con puntuaciones infladas (por ejemplo, N2+N3 activos sin N1 suman +3 cuando deberían sumar 0).
+
+También hay un bug menor en notifier.py (_build_setup_tg_msg): el mensaje de Telegram infiere qué niveles están activos a partir del total de puntos (div_pts >= 3 → "asume N2", >= 4 → "asume N3") en lugar de usar los flags reales — así que el texto que ves puede no corresponder a lo que realmente se detectó.
+
+El fix
+
+setup_engine.py — detect_active_divergence():
+
+python
+lb_mandatory = {1: 6}   # SOLO N1 satisface el filtro duro obligatorio
+
+setup_engine.py — dentro de score_setup():
+
+python
+div_pts = 0
+if has_n1:
+    div_pts += 1
+    if has_n2:
+        div_pts += 1
+        if has_n3:
+            div_pts += 2
+div_pts = max(1, min(div_pts, 4))
+bd["has_n1"], bd["has_n2"], bd["has_n3"] = has_n1, has_n2, has_n3   # para el mensaje
+
+notifier.py — _build_setup_tg_msg(), reemplaza el bloque que infiere niveles por punto total:
+
+python
+if breakdown.get("has_n2"):
+    out_lines.append(f"✅ Divergencia RSI {direction} N2 (segundo nivel, más profunda) activa (+1)")
+if breakdown.get("has_n3"):
+    out_lines.append(f"✅ Divergencia RSI {direction} N3 (tercer nivel, máxima fuerza) activa (+2)")
+
+Además, de paso detecté un tercer bug relacionado con "liquidez": el Alto/Bajo de Asia se calcula (asia_high, asia_low) pero nunca se incluye en _HIGH_LEVELS/_LOW_LEVELS, así que un barrido de esos niveles nunca cuenta como sweep aunque tu spec los liste como liquidez MENOR. Si quieres, te paso también ese fix — dime si aplico los tres o si primero quieres verificar que el de divergencias N1/N2/N3 es el que te está afectando.

@@ -1265,11 +1265,11 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
         "",
     ]
 
-    # Lista de confluencias activas
+    # Lista de confluencias activas — usar flags reales, no inferir por puntos
     out_lines.append(f"✅ Divergencia RSI {direction} N{div_level} activa (RSI {rsi_val:.0f} vs {rsi_prev:.0f})")
-    if breakdown.get("div_pts", 0) >= 3:
+    if breakdown.get("has_n2"):
         out_lines.append(f"✅ Divergencia RSI {direction} N2 (segundo nivel, mas profunda) activa (+1)")
-    if breakdown.get("div_pts", 0) >= 4:
+    if breakdown.get("has_n3"):
         out_lines.append(f"✅ Divergencia RSI {direction} N3 (tercer nivel, maxima fuerza) activa (+2)")
 
     out_lines.append(f"✅ {level_name} barrido hace {sweep.get('candles_ago', 1)} vela(s) ({level_px})")

@@ -141,13 +141,15 @@ _TIER = {
     "pdh": "medium", "pdl": "medium",
     "wkh": "major",  "wkl": "major",
     "mth": "major",  "mtl": "major",
+    "asia_high": "minor",  "asia_low": "minor",
+    "europe_high": "minor", "europe_low": "minor",
 }
 _TIER_ORDER = {"minor": 0, "medium": 1, "major": 2}
 
 # Niveles altos: se barren cuando High > nivel → trampa alcista → setup bajista
-_HIGH_LEVELS = {"hod", "pdh", "wkh", "mth"}
+_HIGH_LEVELS = {"hod", "pdh", "wkh", "mth", "asia_high", "europe_high"}
 # Niveles bajos: se barren cuando Low < nivel → trampa bajista → setup alcista
-_LOW_LEVELS  = {"lod", "pdl", "wkl", "mtl"}
+_LOW_LEVELS  = {"lod", "pdl", "wkl", "mtl", "asia_low", "europe_low"}
 
 
 def detect_liquidity_sweep(df: pd.DataFrame, levels: dict) -> dict | None:
@@ -310,9 +312,23 @@ def detect_active_divergence(
     else:
         accepted_types = {"bear", "hbear"}
 
-    # Solo N1 y N2 como gate obligatorio
-    lb_mandatory = {1: 6, 2: 11}
+    # FILTRO DURO: sólo N1 satisface el gate obligatorio.
+    # N2 sin N1 no pasa. N3 sin N1 (y N2) no pasa.
+    lb_mandatory = {1: 6}
 
+    # Primero verificar que exista N1 reciente
+    has_n1_gate = False
+    for dv in all_divs:
+        if dv["type"] not in accepted_types:
+            continue
+        if dv["level"] == 1 and dv["bar"] >= n - 6:
+            has_n1_gate = True
+            break
+
+    if not has_n1_gate:
+        return None   # STOP — sin N1 no hay setup
+
+    # Con N1 confirmado, buscar la mejor divergencia (N1 o N2, más reciente)
     best = None
     for dv in all_divs:
         if dv["type"] not in accepted_types:
@@ -609,16 +625,20 @@ def score_setup(
             elif lvl == 3 and dv["bar"] >= n - 21:
                 has_n3 = True
 
+    # Puntuación jerárquica: N2 solo puntúa si hay N1; N3 solo si hay N1+N2
     div_pts = 0
     if has_n1:
         div_pts += 1
-    if has_n2:
-        div_pts += 1
-    if has_n3:
-        div_pts += 2
-    # El gate obligatorio ya pasó (N1 o N2 activo), garantizamos ≥1 pt
+        if has_n2:
+            div_pts += 1
+            if has_n3:
+                div_pts += 2
+    # El gate obligatorio ya pasó (N1 activo garantizado), ≥1 pt
     div_pts = max(1, min(div_pts, 4))
     bd["div_pts"] = div_pts
+    bd["has_n1"] = has_n1
+    bd["has_n2"] = has_n2
+    bd["has_n3"] = has_n3
     pts += div_pts
 
     # ── Liquidez: suma de tiers activos en la misma dirección ────

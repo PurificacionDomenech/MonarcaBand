@@ -1,3 +1,5 @@
 - [Alert accuracy strictness](alert-accuracy.md) — detectors must only score REAL confluences, not "forming" or near-misses
 - [Shark Fin 24-candle window](shark-fin-window.md) — calculate on last 24 candles only to avoid mixing historical signals with current candle
 - [Deduplication by exact candle timestamp](dedup-candle-timestamp.md) — each candle alerts once, not by price level
+- [Setup Engine N1 gate](setup-engine-n1-gate.md) — divergence gate requires N1, N2 only scores with N1, N3 only with N1+N2
+- [Notifier flags vs inference](notifier-flags.md) — use real has_n2/has_n3 flags, never infer levels from point totals
