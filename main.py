@@ -717,33 +717,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     raw.append({"id": 4, "ok": False,
         "texto": "Patrones desactivados del scoring", "tipo": "info"})
 
-    # ⑤ HOD/LOD — confluencia de soporte/resistencia (0.3% umbral)
-    # + PDH/PDL (máx/mín día anterior) para referencias en alertas.
-    # Sin depender de `direction` (aún no calculada). El PASO 2 descarta lo que no alinee.
-    try:
-        day_high = float(df["High"].iloc[-min(24, len(df)):].max()) if len(df) >= 1 else None
-        day_low  = float(df["Low"].iloc[-min(24, len(df)):].min())  if len(df) >= 1 else None
-        if day_high is not None and day_low is not None:
-            # HOD/LOD: sólo si la VELA EVALUADA tocó realmente el máximo/mínimo del día.
-            vela_toca_lod = bar_low is not None and bar_low <= day_low * 1.001
-            vela_toca_hod = bar_high is not None and bar_high >= day_high * 0.999
-            if vela_toca_lod:
-                raw.append({"id": 5, "ok": True,
-                    "texto": f"LOD {day_low:.4g} — precio tocando soporte", "tipo": "bullish", "pts": 2})
-            if vela_toca_hod:
-                raw.append({"id": 5, "ok": True,
-                    "texto": f"HOD {day_high:.4g} — precio tocando resistencia", "tipo": "bearish", "pts": 2})
-            if not vela_toca_lod and not vela_toca_hod:
-                raw.append({"id": 5, "ok": False,
-                    "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
-        else:
-            raw.append({"id": 5, "ok": False,
-                "texto": "HOD/LOD no disponible", "tipo": "info"})
-    except Exception:
-        raw.append({"id": 5, "ok": False,
-            "texto": "HOD/LOD no disponible", "tipo": "info"})
-
-    # PDH / PDL (día anterior) usando todo el DataFrame (no df_ref)
+    # ④ Soporte / Resistencia — techos y suelos: día actual (+1), día anterior (+1), semana (+1)
     try:
         idx = df.index
         if idx.tz is None:
@@ -752,17 +726,55 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
             idx = idx.tz_convert("UTC")
         dates = idx.normalize()
         last_date = dates[-1]
+
+        # — HOD/LOD del día actual (last 24 velas)
+        day_high = float(df["High"].iloc[-min(24, len(df)):].max()) if len(df) >= 1 else None
+        day_low  = float(df["Low"].iloc[-min(24, len(df)):].min())  if len(df) >= 1 else None
+        vela_toca_lod = bar_low is not None and day_low is not None and bar_low <= day_low * 1.001
+        vela_toca_hod = bar_high is not None and day_high is not None and bar_high >= day_high * 0.999
+        if vela_toca_lod:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"LOD {day_low:.4g} — precio tocando soporte", "tipo": "bullish", "pts": 1})
+        if vela_toca_hod:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"HOD {day_high:.4g} — precio tocando resistencia", "tipo": "bearish", "pts": 1})
+
+        # — PDH/PDL del día anterior
         all_unique_days = sorted(dates.unique())
         prev_days = [d for d in all_unique_days if d < last_date]
         prev_date = prev_days[-1] if prev_days else None
         yest_df = df[dates == prev_date] if prev_date is not None else pd.DataFrame()
         pdh = float(yest_df["High"].max()) if not yest_df.empty else None
         pdl = float(yest_df["Low"].min())  if not yest_df.empty else None
-    except Exception:
-        pdh, pdl = None, None
+        vela_toca_pdh = bar_high is not None and pdh is not None and bar_high >= pdh * 0.999
+        vela_toca_pdl = bar_low is not None and pdl is not None and bar_low <= pdl * 1.001
+        if vela_toca_pdl:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"PDL {pdl:.4g} — precio tocando suelo ayer", "tipo": "bullish", "pts": 1})
+        if vela_toca_pdh:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"PDH {pdh:.4g} — precio tocando techo ayer", "tipo": "bearish", "pts": 1})
 
-    bar_high = float(df["High"].iloc[n]) if "High" in df.columns else None
-    bar_low  = float(df["Low"].iloc[n])  if "Low"  in df.columns else None
+        # — Weekly high/low (desde inicio de semana)
+        week_start = (last_date - pd.Timedelta(days=last_date.dayofweek))
+        week_df = df[dates >= week_start]
+        week_high = float(week_df["High"].max()) if not week_df.empty else None
+        week_low  = float(week_df["Low"].min())  if not week_df.empty else None
+        vela_toca_wl = bar_low is not None and week_low is not None and bar_low <= week_low * 1.001
+        vela_toca_wh = bar_high is not None and week_high is not None and bar_high >= week_high * 0.999
+        if vela_toca_wl:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"WEEK LOW {week_low:.4g} — precio tocando suelo semanal", "tipo": "bullish", "pts": 1})
+        if vela_toca_wh:
+            raw.append({"id": 5, "ok": True,
+                "texto": f"WEEK HIGH {week_high:.4g} — precio tocando techo semanal", "tipo": "bearish", "pts": 1})
+
+        if not (vela_toca_lod or vela_toca_hod or vela_toca_pdl or vela_toca_pdh or vela_toca_wl or vela_toca_wh):
+            raw.append({"id": 5, "ok": False,
+                "texto": f"HOD {day_high:.4g} / LOD {day_low:.4g}", "tipo": "info"})
+    except Exception:
+        raw.append({"id": 5, "ok": False,
+            "texto": "HOD/LOD no disponible", "tipo": "info"})
 
     # ⑦ Shark Fin — calcular SOLO sobre las últimas 24 velas para que la alerta
     # corresponda al momento de la vela evaluada, no a divergencias históricas.
