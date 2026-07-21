@@ -670,16 +670,9 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
                 recent_divs = [d for d in recent_divs if d["type"] in ("bear", "hbear")]
 
         if recent_divs:
-            # Sumar puntos según niveles detectados (N1=1, N2=1, N3=1, acumuladas)
-            div_pts = 0
-            div_levels = set()
-            for d in recent_divs:
-                lvl = d.get("level", 1)
-                if lvl not in div_levels:
-                    div_levels.add(lvl)
-                    div_pts += 1
-            div_pts = min(div_pts, 3)  # max 3 pts
-            best = recent_divs[0]
+            # Puntos = nivel máximo de divergencia: N1=1, N2=2, N3=3
+            best = max(recent_divs, key=lambda d: d.get("level", 1))
+            div_pts = best.get("level", 1)
             div_type = best["type"]
             div_dir = "bullish" if div_type in ("bull", "hbull") else "bearish" if div_type in ("bear", "hbear") else "info"
             div_data = best

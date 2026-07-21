@@ -96,7 +96,7 @@ The system evaluates up to 6 confluences with **directional validation**:
 | ① | RSI <30 / >70 (extremo) | bullish (sobreventa máxima) / bearish (sobrecompra máxima) | +2 |
 | ① | RSI 30-44 / 56-70 (interés) | bullish (zona de interés) / bearish (zona de interés) | +1 |
 | ① | RSI 45-55 (neutro) | tierra de nadie | 0 |
-| ② | Divergencia RSI | bullish / bearish según tipo (N1 +1, N2 +2, N3 +3) | +1 a +3 |
+| ② | Divergencia RSI | bullish / bearish según nivel (N1=1, N2=2, N3=3) | +1 a +3 |
 | ③ | Vacío FVG activo cerca del precio | bullish / bearish según dirección | +1 |
 | ④ | Soportes (HOD/LOD/PDH/PDL/Weekly) | bullish / bearish según dirección | +1 por toque |
 | ⑤ | **Shark Fin** | bullish (agotamiento bajista) / bearish (agotamiento alcista) | +2 crossed / +4 exceeded |
