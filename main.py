@@ -359,7 +359,7 @@ async def async_download(ticker, **kwargs):
 async def async_download_rb(ticker: str, label: str = "") -> tuple:
     """Descarga velas de 1 hora directamente de yfinance.
     Retorna (DataFrame con columnas Open/High/Low/Close/Volume, bar_type_label)."""
-    df = await async_download(ticker, period="6mo", interval="1h", progress=False)
+    df = await async_download(ticker, period="1mo", interval="1h", progress=False)
     df = clean_df(df)
     if df.empty:
         return df, "1h"
@@ -1210,105 +1210,108 @@ async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
 # ─── SCHEDULER ───────────────────────────────────────────────
 
 
+async def _check_one_ticker(t: str, num_candles: int, label: str, max_per_ticker: int) -> dict | None:
+    """Revisa un solo ticker y retorna dict {ticker: [alertas]} o None."""
+    now = time.time()
+    try:
+        cfg = get_cfg(t)
+        df, bar_type = await async_download_rb(t.upper())
+        if df.empty:
+            return None
+
+        # ─── INYECTAR PRECIO ACTUAL ───
+        live_price = await _get_current_price(t.upper())
+        if live_price and not df.empty:
+            last_close = float(df["Close"].iloc[-1])
+            if abs(live_price - last_close) / last_close > 0.0005:
+                new_idx = pd.Timestamp.now(tz="UTC")
+                ghost = pd.DataFrame({
+                    "Open": [live_price], "High": [max(live_price, last_close)],
+                    "Low":  [min(live_price, last_close)], "Close": [live_price],
+                    "Volume": [0.0],
+                }, index=[new_idx])
+                df = pd.concat([df, ghost])
+                df.sort_index(inplace=True)
+        # ─── FIN INYECCIÓN ───
+
+        df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
+        opens_data = calc_opens(df)
+
+        # Obtener contexto de componentes para índices (una vez por ticker)
+        components_ctx = None
+        if t.upper() in INDEX_COMPONENTS:
+            try:
+                components_ctx = await get_index_components_context(t.upper())
+            except Exception:
+                pass
+
+        nuevas = []
+        # Analizar las últimas num_candles velas
+        for i in range(min(num_candles, len(df))):
+            fila = len(df) - 1 - i
+            df_slice = df.iloc[: fila + 1]
+            ts = df.index[fila]
+            try:
+                ts_parsed   = pd.Timestamp(ts)
+                ts_utc      = ts_parsed.tz_localize("UTC") if ts_parsed.tzinfo is None else ts_parsed.tz_convert("UTC")
+                ts_utc_iso  = ts_utc.isoformat()
+                hora        = ts_utc.strftime("%d/%m %H:%M")
+                dia_num     = ts_parsed.weekday()
+                dia_name    = ts_parsed.strftime("%A")
+            except Exception:
+                hora       = ""
+                ts_utc_iso = ""
+                dia_num    = -1
+                dia_name   = ""
+
+            # Filtro de frescura: vela histórica <=90min (3 velas 1h de margen)
+            try:
+                age_min = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 60
+                max_age_min = 90
+                if age_min > max_age_min:
+                    continue
+            except Exception:
+                pass
+
+            resultado = evaluate_confluencias(
+                df_slice, ticker=t.upper(), cfg=cfg,
+                opens=opens_data, components_ctx=components_ctx,
+            )
+
+            if resultado and resultado.get("alert"):
+                vela_key = f"VELA_{t}_{ts_utc_iso}"
+                if vela_key not in _sent_cache:
+                    nuevas.append({
+                        "nivel":          resultado["nivel"],
+                        "msg":            f"[{t.upper()}] {resultado['estado']} {hora}".strip(),
+                        "hora":           hora, "ts_utc_iso": ts_utc_iso,
+                        "dia_num":        dia_num, "dia_name": dia_name,
+                        "resultado":      resultado, "components_ctx": components_ctx,
+                    })
+                    _sent_cache[vela_key] = now
+        if max_per_ticker > 0:
+            nuevas = nuevas[:max_per_ticker]
+        if nuevas:
+            return {t.upper(): nuevas}
+        return None
+    except Exception as e:
+        print(f"[{label or 'scheduler'}] Error en {t}: {e}")
+        return None
+
+
 async def _check_tickers(tickers: list, num_candles: int = 1, label: str = "",
                          max_per_ticker: int = 0) -> dict:
     """
-    Revisa los tickers dados. num_candles controla cuántas velas recientes analizar.
-    max_per_ticker: si > 0, limita las alertas enviadas por activo (0 = sin límite).
-    Retorna alerts_by_ticker con las alertas nuevas (sin duplicados en cache).
+    Revisa los tickers dados EN PARALELO (gather).
+    num_candles: cuántas velas recientes analizar.
+    max_per_ticker: si > 0, limita alertas enviadas por activo.
     """
-    now = time.time()
+    tasks = [_check_one_ticker(t, num_candles, label, max_per_ticker) for t in tickers]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     alerts_by_ticker: dict = {}
-    for t in tickers:
-        try:
-            cfg = get_cfg(t)
-            df, bar_type = await async_download_rb(t.upper())
-            if df.empty:
-                continue
-
-            # ─── INYECTAR PRECIO ACTUAL ───
-            live_price = await _get_current_price(t.upper())
-            if live_price and not df.empty:
-                last_close = float(df["Close"].iloc[-1])
-                if abs(live_price - last_close) / last_close > 0.0005:
-                    new_idx = pd.Timestamp.now(tz="UTC")
-                    ghost = pd.DataFrame({
-                        "Open": [live_price], "High": [max(live_price, last_close)],
-                        "Low":  [min(live_price, last_close)], "Close": [live_price],
-                        "Volume": [0.0],
-                    }, index=[new_idx])
-                    df = pd.concat([df, ghost])
-                    df.sort_index(inplace=True)
-            # ─── FIN INYECCIÓN ───
-
-            df = calc_indicators(df, cfg["ema_short"], cfg["ema_long"])
-            opens_data = calc_opens(df)
-
-            # Obtener contexto de componentes para índices (una vez por ticker)
-            components_ctx = None
-            if t.upper() in INDEX_COMPONENTS:
-                try:
-                    components_ctx = await get_index_components_context(t.upper())
-                except Exception:
-                    pass
-
-            nuevas = []
-            # Analizar las últimas num_candles velas
-            for i in range(min(num_candles, len(df))):
-                fila = len(df) - 1 - i
-                df_slice = df.iloc[: fila + 1]
-                ts = df.index[fila]
-                try:
-                    ts_parsed   = pd.Timestamp(ts)
-                    ts_utc      = ts_parsed.tz_localize("UTC") if ts_parsed.tzinfo is None else ts_parsed.tz_convert("UTC")
-                    ts_utc_iso  = ts_utc.isoformat()
-                    hora        = ts_utc.strftime("%d/%m %H:%M")
-                    dia_num     = ts_parsed.weekday()
-                    dia_name    = ts_parsed.strftime("%A")
-                except Exception:
-                    hora       = ""
-                    ts_utc_iso = ""
-                    dia_num    = -1
-                    dia_name   = ""
-
-                # Filtro de frescura: vela histórica <=90min (3 velas 1h de margen)
-                try:
-                    age_min = (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds() / 60
-                    max_age_min = 90   # 1.5h — cubre gap entre ejecuciones del scheduler
-                    if age_min > max_age_min:
-                        continue
-                except Exception:
-                    pass
-
-                resultado = evaluate_confluencias(
-                    df_slice,
-                    ticker=t.upper(),
-                    cfg=cfg,
-                    opens=opens_data,
-                    components_ctx=components_ctx,
-                )
-
-                if resultado and resultado.get("alert"):
-                    # Deduplicación por timestamp EXACTO de la vela — cada vela alerta una sola vez
-                    vela_key = f"VELA_{t}_{ts_utc_iso}"
-                    if vela_key not in _sent_cache:
-                        nuevas.append({
-                            "nivel":          resultado["nivel"],
-                            "msg":            f"[{t.upper()}] {resultado['estado']} {hora}".strip(),
-                            "hora":           hora,
-                            "ts_utc_iso":     ts_utc_iso,
-                            "dia_num":        dia_num,
-                            "dia_name":       dia_name,
-                            "resultado":      resultado,
-                            "components_ctx": components_ctx,
-                        })
-                        _sent_cache[vela_key] = now
-            if max_per_ticker > 0:
-                nuevas = nuevas[:max_per_ticker]
-            if nuevas:
-                alerts_by_ticker[t.upper()] = nuevas
-        except Exception as e:
-            print(f"[{label or 'scheduler'}] Error en {t}: {e}")
+    for r in results:
+        if isinstance(r, dict) and r:
+            alerts_by_ticker.update(r)
     return alerts_by_ticker
 
 
@@ -1917,9 +1920,14 @@ if HAS_SCHEDULER:
             polling_task = asyncio.create_task(_tg_polling(token))
         try:
             scheduler = AsyncIOScheduler()
-            scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
+            # Wrap en background task para no bloquear el event loop de uvicorn
+            def _bg_scheduled_watch():
+                asyncio.create_task(scheduled_watch())
+            scheduler.add_job(_bg_scheduled_watch, "interval", minutes=30, id="watch_30m")
             # Job de TB confluencias (TradingBand antiguo) eliminado del scheduler
-            scheduler.add_job(_rsi_realtime_check, "interval",
+            def _bg_rsi_check():
+                asyncio.create_task(_rsi_realtime_check())
+            scheduler.add_job(_bg_rsi_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
             print(f"[scheduler] Iniciado · Revisión cada 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")

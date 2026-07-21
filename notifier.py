@@ -713,15 +713,15 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     Construye el mensaje Telegram de la matriz de confluencias.
     Muestra la dirección real (LARGO / CORTO) y alerta si hay contradicción.
     """
-    t             = resultado["ticker"]
+    t             = resultado.get("ticker", "")
     name          = ASSET_NAMES.get(t, t)
-    precio        = resultado["precio"]
+    precio        = resultado.get("precio", 0)
     rsi           = resultado.get("rsi")
-    puntos        = resultado["puntos"]
-    estado        = resultado["estado"]
+    puntos        = resultado.get("puntos", 0)
+    estado        = resultado.get("estado", "NO AHORA")
     direction     = resultado.get("direction", "info")
     contradiccion = resultado.get("contradiccion", False)
-    confs         = resultado["confluencias"]
+    confs         = resultado.get("confluencias", [])
 
     hora_display = hora
     tz_label     = "UTC"
