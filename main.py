@@ -72,7 +72,6 @@ try:
         notify_alertas,
         notify_users_with_alerts,
         notify_divergences,
-        notify_setup_alerts,
         register_chat,
         send_telegram_to,
         get_user_prefs,
@@ -1576,18 +1575,7 @@ async def scheduled_watch():
 
     await _update_rsi_watchlist()
 
-    # 4) Setup Engine — 3 criterios obligatorios + scoring 15pts
-    if HAS_SETUP_ENGINE:
-        setup_results = await _check_setups(watch_tickers)
-        if setup_results:
-            save_only = {t: r for t, r in setup_results.items() if r.get("nivel_alerta") == "save"}
-            to_alert  = {t: r for t, r in setup_results.items() if r.get("nivel_alerta") != "save"}
-            if save_only:
-                print(f"[setup] {len(save_only)} setup(s) CONSIDERAR (7-8pts) — guardados sin Telegram")
-            if to_alert and HAS_NOTIFIER:
-                await notify_setup_alerts(to_alert)
-        else:
-            print("[setup] Sin setups activos (no pasaron los 3 criterios)")
+    # 4) Setup Engine — DESACTIVADO (código legacy eliminado)
 
 
 async def daily_catchup():

@@ -59,9 +59,6 @@ NIVEL_EMOJI    = {"bullish": "🟢", "bearish": "🔴", "info": "🔵"}
 NIVEL_LABEL    = {"bullish": "Favorable",  "bearish": "Atención",  "info": "Interesante"}
 NIVEL_LABEL_EN = {"bullish": "Bullish",    "bearish": "Bearish",   "info": "Watch"}
 
-RISK_WARNING_ES = "\n❗️ <b>No arriesgar más de un 1% del balance de tu cuenta en un trade!</b>"
-RISK_WARNING_EN = "\n❗️ <b>Don't risk more than 1% of the balance of your account in any trade!</b>"
-RISK_WARNING = RISK_WARNING_ES  
 
 def _translate_en(msg: str) -> str:
     msg = re.sub(r'Precio cruza (EMA\d+) al alza',  r'Price crosses \1 upward',   msg)
@@ -275,8 +272,6 @@ def _build_tg_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") ->
             if tv:
                 blocks.append(tv)
 
-    blocks.append(RISK_WARNING_EN if lang == "en" else RISK_WARNING_ES)
-    blocks.append("")
     if lang == "en":
         blocks.append("<i>Automated technical analysis · Not financial advice</i>")
     else:
@@ -305,20 +300,13 @@ def _build_html_grouped(alerts_by_ticker: dict, now_str: str, lang: str = "es") 
             rows += (f'<tr><td style="padding:3px 10px 3px 20px;border-bottom:1px solid #1a2a1a;'
                      f'color:{c};font-family:monospace;font-size:13px">'
                      f'{e} {lbl} · {msg}</td></tr>')
-    risk_row = (
-        '<tr><td style="padding:10px;font-family:monospace;font-size:11px;'
-        'color:#ffaa00;border-top:1px solid #2a2000;background:rgba(255,170,0,0.05);">'
-        '❗️ No arriesgar más de un 1% del balance de tu cuenta en un trade!<br>'
-        '❗️ Don\'t risk more than 1% of the balance of your account in any trade!'
-        '</td></tr>'
-    )
     return f"""<html><body style="background:#000;padding:20px;">
       <div style="max-width:600px;margin:auto;background:#010801;border:1px solid #00ff4120;border-radius:8px;overflow:hidden;">
         <div style="background:#010f01;padding:14px 20px;border-bottom:1px solid #00ff4115;">
           <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">⬡ TRADING BAND</span>
           <span style="font-family:monospace;font-size:11px;color:#666;margin-left:10px;">{now_str}</span>
         </div>
-        <table style="width:100%;border-collapse:collapse;">{rows}{risk_row}</table>
+        <table style="width:100%;border-collapse:collapse;">{rows}</table>
         <div style="padding:10px 20px;font-size:10px;color:#333;font-family:monospace;border-top:1px solid #00ff4110;text-align:center;">
           {disclaimer}
         </div>
@@ -744,13 +732,7 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     else:
         estado_emoji = "⚪"
 
-    if not contradiccion and direction in ("bullish", "bearish"):
-        if lang == "en":
-            dir_label = "📈 LONG setup" if direction == "bullish" else "📉 SHORT setup"
-        else:
-            dir_label = "📈 Setup LARGO" if direction == "bullish" else "📉 Setup CORTO"
-    else:
-        dir_label = ""
+    dir_label = ""
 
     dia_map_es = {"Monday":"Lunes","Tuesday":"Martes","Wednesday":"Miércoles",
                   "Thursday":"Jueves","Friday":"Viernes","Saturday":"Sábado","Sunday":"Domingo"}
@@ -761,14 +743,12 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
         conf_label = f"{puntos}/{max_confs} confluences"
         sec_header = "<b>Active confluences:</b>"
         candle_lbl = "Range bar"
-        contr_warn = ("⚠️ <b>CONFLICTING SIGNALS</b> — confluences point in opposite directions. "
-                      "No valid setup.") if contradiccion else ""
+        contr_warn = ("⚠️ <b>CONFLICTING SIGNALS</b> — confluences point in opposite directions.") if contradiccion else ""
     else:
         conf_label = f"{puntos}/{max_confs} confluencias"
         sec_header = "<b>Confluencias activas:</b>"
         candle_lbl = "Vela 1H"
-        contr_warn = ("⚠️ <b>SEÑALES CONTRADICTORIAS</b> — las confluencias apuntan en direcciones "
-                      "opuestas. Setup no válido.") if contradiccion else ""
+        contr_warn = ("⚠️ <b>SEÑALES CONTRADICTORIAS</b> — las confluencias apuntan en direcciones opuestas.") if contradiccion else ""
 
     is_rsi_rt = resultado.get("rsi_realtime", False)
     rt_banner = ""
@@ -824,28 +804,8 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
         texto_escapado = html.escape(c['texto'], quote=False)
         lines.append(f"{icon} {texto_escapado}")
 
-    # ── Bloque especial Aleta Tiburón ──
-    shark_conf = next((c for c in confs if c.get("id") == 7 and c.get("ok")), None)
-    if shark_conf and shark_conf.get("alert_immediate"):
-        lines.append("")
-        if "EXTREMA" in shark_conf.get("texto", ""):
-            if lang == "en":
-                lines.append("⚡🦈 <b>EXTREME SHARK FIN</b> — RSI peak exceeded prior divergence")
-                lines.append("   This is a maximum exhaustion signal — immediate alert")
-            else:
-                lines.append("⚡🦈 <b>ALETA TIBURÓN EXTREMA</b> — pico RSI superó divergencia previa")
-                lines.append("   Señal de agotamiento máximo — alerta inmediata")
-        else:
-            if lang == "en":
-                lines.append("🦈 <b>Shark fin confirmed</b> — RSI crossed back from extreme zone")
-            else:
-                lines.append("🦈 <b>Aleta tiburón confirmada</b> — RSI cruzó de vuelta la zona extrema")
-
     lines.extend(_build_day_context_lines(resultado, lang))
     lines.extend(_build_components_context_lines(t, components_ctx, lang))
-
-    lines.append("")
-    lines.append(RISK_WARNING_EN if lang == "en" else RISK_WARNING_ES)
 
     tv = _tv_link(t, lang)
     if tv:
@@ -1039,7 +999,6 @@ def _build_div_tg_msg(ticker: str, divs: list, now_str: str, lang: str = "es") -
         lines.append(f"💰 {price_lbl}: <code>{dv['price']:.5g}</code>")
         lines.append("")
 
-    lines.append(RISK_WARNING_EN if lang == "en" else RISK_WARNING_ES)
     if tv:
         lines.append("")
         lines.append(tv)
@@ -1071,20 +1030,13 @@ def _build_div_html(divs_by_ticker: dict, now_str: str) -> str:
                 f'color:{c};font-family:monospace;font-size:13px">'
                 f'{lbl_es} · {level_lbl} · RSI {dv["rsi"]:.1f} · {dv["price"]:.5g} · {in_zone}</td></tr>'
             )
-    risk_row = (
-        '<tr><td style="padding:10px;font-family:monospace;font-size:11px;'
-        'color:#ffaa00;border-top:1px solid #2a2000;background:rgba(255,170,0,0.05);">'
-        '❗️ No arriesgar más de un 1% del balance de tu cuenta en un trade!<br>'
-        '❗️ Don\'t risk more than 1% of the balance of your account in any trade!'
-        '</td></tr>'
-    )
     return f"""<html><body style="background:#000;padding:20px;">
       <div style="max-width:600px;margin:auto;background:#010801;border:1px solid #00ff4120;border-radius:8px;overflow:hidden;">
         <div style="background:#010f01;padding:14px 20px;border-bottom:1px solid #00ff4115;">
           <span style="font-family:monospace;font-size:14px;color:#00ff41;font-weight:bold;">📊 RSI Divergencias · Trading Band</span>
           <span style="font-family:monospace;font-size:11px;color:#666;margin-left:10px;">{now_str}</span>
         </div>
-        <table style="width:100%;border-collapse:collapse;">{rows}{risk_row}</table>
+        <table style="width:100%;border-collapse:collapse;">{rows}</table>
         <div style="padding:10px 20px;font-size:10px;color:#333;font-family:monospace;border-top:1px solid #00ff4110;text-align:center;">
           Análisis técnico automatizado · No es asesoría financiera
         </div>
@@ -1360,7 +1312,6 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
 
     # Footer
     out_lines += [
-        "❗ No arriesgar mas del 1% del balance",
         "─" * 20,
         "Analisis tecnico automatizado",
         "No es asesoria financiera",
