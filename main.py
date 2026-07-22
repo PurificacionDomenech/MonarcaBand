@@ -358,7 +358,7 @@ async def async_download(ticker, **kwargs):
 async def async_download_rb(ticker: str, label: str = "") -> tuple:
     """Descarga velas de 1 hora directamente de yfinance.
     Retorna (DataFrame con columnas Open/High/Low/Close/Volume, bar_type_label)."""
-    df = await async_download(ticker, period="1mo", interval="1h", progress=False)
+    df = await async_download(ticker, period="3mo", interval="1h", progress=False)
     df = clean_df(df)
     if df.empty:
         return df, "1h"
