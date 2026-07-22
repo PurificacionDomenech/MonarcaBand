@@ -688,17 +688,13 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         fvgs = _detect_fvg(df, max_zonas=10)
         # SÓLO FVG que el precio ACTUAL toca o está dentro — no si está lejos.
         # active: touched=True (dentro o tocando), frozen=False (no rota).
-        # Filtro adicional: precio dentro de la zona ±0.5% del rango del FVG.
+        # El detector ya filtra por touched/frozen; usamos el primero más cercano.
         active = [f for f in fvgs if f.get("touched") and not f.get("frozen")]
-        # Ordenar por proximidad al precio
+        # Ordenar por proximidad al precio (más cercano primero)
         active.sort(key=lambda f: abs(price - (f["top"]+f["bottom"])/2))
         for fvg in active:
-            fvg_mid = (fvg["top"] + fvg["bottom"]) / 2
-            fvg_range = fvg["top"] - fvg["bottom"]
-            rel_dist = abs(price - fvg_mid) / max(fvg_range, 1e-12)
-            # Precio debe estar dentro o a menos de 0.5% del rango del FVG
-            if rel_dist > 0.005:
-                continue
+            # Ya filtrado por touched=True y not frozen arriba — no aplicar
+            # filtro adicional de proximidad que descarta FVGs válidos
             fvg_dir = "bullish" if fvg["direction"] == "bull" else "bearish"
             fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
                        f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
