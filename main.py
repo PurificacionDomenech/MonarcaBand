@@ -1908,14 +1908,9 @@ if HAS_SCHEDULER:
             polling_task = asyncio.create_task(_tg_polling(token))
         try:
             scheduler = AsyncIOScheduler()
-            # Wrap en background task para no bloquear el event loop de uvicorn
-            def _bg_scheduled_watch():
-                asyncio.create_task(scheduled_watch())
-            scheduler.add_job(_bg_scheduled_watch, "interval", minutes=30, id="watch_30m")
-            # Job de TB confluencias (TradingBand antiguo) eliminado del scheduler
-            def _bg_rsi_check():
-                asyncio.create_task(_rsi_realtime_check())
-            scheduler.add_job(_bg_rsi_check, "interval",
+            # AsyncIOScheduler maneja coroutines nativamente
+            scheduler.add_job(scheduled_watch, "interval", minutes=30, id="watch_30m")
+            scheduler.add_job(_rsi_realtime_check, "interval",
                               minutes=_RSI_WATCH_INTERVAL_MIN, id="rsi_rt")
             scheduler.start()
             print(f"[scheduler] Iniciado · Revisión cada 30 min + RSI real-time cada {_RSI_WATCH_INTERVAL_MIN} min")
