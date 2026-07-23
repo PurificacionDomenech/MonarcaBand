@@ -1158,7 +1158,7 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     sweep     = result.get("sweep", {})
     divergence= result.get("divergence", {})
     breakdown = result.get("breakdown", {})
-    fvg       = result.get("fvg")
+    sd_zone   = result.get("sd_zone")
     patterns  = result.get("patterns", {})
     session_names = result.get("session_names", [])
     sl        = result.get("sl")
@@ -1227,10 +1227,11 @@ def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
     out_lines.append(f"✅ {level_name} barrido hace {sweep.get('candles_ago', 1)} vela(s) ({level_px})")
     out_lines.append(f"✅ Trampa confirmada - cerro {direction} del {level_name}")
 
-    if fvg and breakdown.get("fvg_pts", 0) > 0:
-        fvg_top = _fmt_price(fvg.get("top"))
-        fvg_bot = _fmt_price(fvg.get("bottom"))
-        out_lines.append(f"✅ FVG {direction} activo {fvg_bot} - {fvg_top}")
+    if sd_zone and breakdown.get("sd_pts", 0) > 0:
+        sd_top = _fmt_price(sd_zone.get("top"))
+        sd_bot = _fmt_price(sd_zone.get("bottom"))
+        sd_type = "Demand" if sd_zone.get("direction") == "bull" else "Supply"
+        out_lines.append(f"✅ Zona {sd_type} activa {sd_bot} - {sd_top}")
 
     # Filtro externo DXI/VIX con confirmacion/contradiccion
     filter_confirms = result.get("filter_confirms")

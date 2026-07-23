@@ -154,7 +154,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
     </svg>
     <span id="hdr-brand">TRADING<span class="x">B</span>AND</span>
-    <span class="hbadge">1H · VACÍOS FVG · SOPORTES</span>
+    <span class="hbadge">1H · SUPPLY/DEMAND · SOPORTES</span>
     <div class="hsep"></div>
     <div id="hdr-search">
       <input id="symbolInput" type="text" placeholder="^DJI · GC=F · BTC-USD · AAPL…" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()">
@@ -169,7 +169,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
         <div id="dSym">---</div>
         <div id="dPx">---</div>
         <div id="dCh">--</div>
-        <div id="emaInfo">VACÍOS FVG · RSI · SOPORTES</div>
+        <div id="emaInfo">SUPPLY/DEMAND · RSI · SOPORTES</div>
         <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--bdr2)">
           <div id="rsiRow">
             <span style="font-family:var(--fd);font-size:7px;color:rgba(0,255,65,.25);text-transform:uppercase;letter-spacing:.12em">RSI 14</span>
@@ -183,7 +183,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
       </div>
 
       <div class="card" id="fw">
-        <div class="fw-title">VACÍOS FVG</div>
+        <div class="fw-title">SUPPLY/DEMAND</div>
         <div id="fl">
           <div id="fvg-list" style="font-family:var(--fm);font-size:9px;color:rgba(0,255,65,.4)">Carga un activo…</div>
         </div>
@@ -355,9 +355,9 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
       <div id="chartBody" style="display:block">
         <div id="ind-bar">
           <span style="font-family:var(--fd);font-size:7px;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,65,.18);font-weight:700;margin-right:3px">IND:</span>
-          <button class="bi" id="t-fA" style="background:rgba(0,255,65,.08);color:#00ff41;border-color:rgba(0,255,65,.22)" onclick="tInd('fvgUp')">FVG ▲</button>
-          <button class="bi" id="t-fB" style="background:rgba(255,0,51,.08);color:#ff4455;border-color:rgba(255,0,51,.22)" onclick="tInd('fvgDown')">FVG ▼</button>
-          <button class="bi" id="t-fV" style="background:rgba(200,160,255,.08);color:#c8a0ff;border-color:rgba(200,160,255,.22)" onclick="tInd('fvgAll')">Vacíos</button>
+          <button class="bi" id="t-fA" style="background:rgba(0,255,65,.08);color:#00ff41;border-color:rgba(0,255,65,.22)" onclick="tInd('fvgUp')">DEMAND ▲</button>
+          <button class="bi" id="t-fB" style="background:rgba(255,0,51,.08);color:#ff4455;border-color:rgba(255,0,51,.22)" onclick="tInd('fvgDown')">SUPPLY ▼</button>
+          <button class="bi" id="t-fV" style="background:rgba(200,160,255,.08);color:#c8a0ff;border-color:rgba(200,160,255,.22)" onclick="tInd('fvgAll')">Zonas</button>
           <button class="bi" id="t-op" style="background:var(--gdim);color:rgba(0,255,65,.55);border-color:rgba(0,255,65,.15)" onclick="tInd('open')">Apert.</button>
           <button class="bi" id="t-rs" style="background:rgba(255,0,51,.08);color:#ff4455;border-color:rgba(255,0,51,.22)" onclick="tInd('rsi')">RSI</button>
           <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
@@ -404,7 +404,7 @@ body{font-family:var(--fb);background:var(--bg);color:var(--text);overflow-x:hid
           <thead>
             <tr>
               <th>★ ACTIVO</th><th class="r">PRECIO</th><th class="r">CAMBIO %</th>
-              <th class="c">RSI 14</th><th class="c">📈 DIV RSI</th><th class="c">🦈 SHARK</th><th class="c">VACÍOS FVG</th><th class="c">ESTADO</th>
+              <th class="c">RSI 14</th><th class="c">📈 DIV RSI</th><th class="c">🦈 SHARK</th><th class="c">SUPPLY/DEMAND</th><th class="c">ESTADO</th>
             </tr>
           </thead>
           <tbody id="tb"></tbody>

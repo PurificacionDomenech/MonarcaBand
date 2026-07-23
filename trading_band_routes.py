@@ -911,25 +911,39 @@ def calc_pattern_hch(df: pd.DataFrame, lookback: int = 120, tol: float = 0.02) -
 
 
 # ────────────────────────────────────────────────────────────
-# VACÍOS / FVG (Fair Value Gaps / Imbalances)
+# ZONAS SUPPLY / DEMAND (Liquidez)
 # ────────────────────────────────────────────────────────────
 
-def detect_fvg(df: pd.DataFrame, max_zonas: int = 10, tol_pct: float = 0.001) -> list:
+def detect_supply_demand_zones(df: pd.DataFrame, lookback: int = 10,
+                                max_zonas: int = 30) -> dict:
     """
-    Detecta vacíos (FVG / Imbalance) en el dataframe.
+    Detecta zonas de oferta/demanda basadas en pivots de precio.
 
-    FVG Alcista  : High[i-2] < Low[i]   →  hueco entre High[i-2] y Low[i]
-    FVG Bajista  : Low[i-2]  > High[i]  →  hueco entre Low[i-2]  y High[i]
+    Supply zone (bajista): creada en pivot high  → rechazo alcista
+    Demand zone (alcista): creada en pivot low   → rechazo bajista
 
-    Un FVG se mantiene "activo" hasta que el precio lo cierra por completo:
-      - Alcista: se anula si Close < bottom del FVG
-      - Bajista: se anula si Close > top    del FVG
+    Lógica de pivots:
+      - Pivot high: High[i] > max(High[i-lookback:i]) y High[i] > max(High[i+1:i+lookback+1])
+      - Pivot low : Low[i]  < min(Low[i-lookback:i])  y Low[i]  < min(Low[i+1:i+lookback+1])
 
-    Retorna lista de FVG activos ordenados por recencia (más reciente primero).
-    Cada FVG tiene: top, bottom, direction (bull|bear), start_idx, touched.
+    Cada zona tiene un "cuerpo" de ±zoneHalf alrededor del pivot, donde
+    zoneHalf = ATR(14) * 0.15 (como en el indicador Pine Script original).
+
+    Estados:
+      - "strong" : recién creada, sin tocar
+      - "touched": precio entró en la zona pero no la rompió
+      - "broken" : Close rompió la zona (invalidada, no se retorna)
+
+    Retorna dict con:
+      - "zones": list de zonas activas (no rotas), ordenadas reciente→antiguo
+      - "created_prev": True si la vela ANTERIOR (idx=-2) creó una zona
+      - "created_prev_dir": "bullish" | "bearish" | None
+      - "touched_now": True si la vela ACTUAL (idx=-1) tocó alguna zona activa
+      - "touched_now_dir": "bullish" | "bearish" | None
     """
-    if len(df) < 5:
-        return []
+    if len(df) < lookback * 2 + 5:
+        return {"zones": [], "created_prev": False, "created_prev_dir": None,
+                "touched_now": False, "touched_now_dir": None}
 
     high = df["High"]  if "High"  in df.columns else df.get("high",  pd.Series())
     low  = df["Low"]   if "Low"   in df.columns else df.get("low",   pd.Series())
@@ -940,89 +954,127 @@ def detect_fvg(df: pd.DataFrame, max_zonas: int = 10, tol_pct: float = 0.001) ->
     if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
 
     n = len(df)
-    zonas = []   # lista de dicts con estado
 
-    for i in range(2, n):
-        h2 = float(high.iloc[i - 2])
-        l2 = float(low.iloc[i - 2])
-        h0 = float(high.iloc[i])
-        l0 = float(low.iloc[i])
-        c0 = float(close.iloc[i])
+    # ATR(14) para calcular zoneHalf
+    atr_vals = pd.Series(np.zeros(n), index=close.index)
+    try:
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr_vals = tr.rolling(window=14, min_periods=14).mean()
+    except Exception:
+        pass
 
-        # FVG Alcista: High[i-2] < Low[i]
-        if h2 < l0:
-            top    = l0
-            bottom = h2
-            zonas.append({
-                "top": top, "bottom": bottom,
-                "direction": "bull",
+    zoneHalf = float(atr_vals.iloc[-1]) * 0.15 if not pd.isna(atr_vals.iloc[-1]) else 0.01
+
+    # Detectar pivots
+    highs = high.values
+    lows = low.values
+    closes = close.values
+
+    pivot_highs = [False] * n
+    pivot_lows = [False] * n
+
+    for i in range(lookback, n - lookback):
+        # Pivot high
+        if highs[i] > max(highs[i - lookback:i]) and highs[i] > max(highs[i + 1:i + lookback + 1]):
+            pivot_highs[i] = True
+        # Pivot low
+        if lows[i] < min(lows[i - lookback:i]) and lows[i] < min(lows[i + 1:i + lookback + 1]):
+            pivot_lows[i] = True
+
+    # Crear zonas
+    zones = []
+    for i in range(n):
+        if pivot_highs[i]:
+            top = float(highs[i]) + zoneHalf
+            bot = float(highs[i]) - zoneHalf
+            zones.append({
+                "top": top, "bottom": bot,
+                "direction": "bear",  # Supply = bajista
                 "start_idx": i,
+                "state": "strong",
                 "touched": False,
-                "frozen": False,
-                "alcanzo_top": False,
-                "alcanzo_bottom": False,
+            })
+        if pivot_lows[i]:
+            top = float(lows[i]) + zoneHalf
+            bot = float(lows[i]) - zoneHalf
+            zones.append({
+                "top": top, "bottom": bot,
+                "direction": "bull",  # Demand = alcista
+                "start_idx": i,
+                "state": "strong",
+                "touched": False,
             })
 
-        # FVG Bajista: Low[i-2] > High[i]
-        if l2 > h0:
-            top    = l2
-            bottom = h0
-            zonas.append({
-                "top": top, "bottom": bottom,
-                "direction": "bear",
-                "start_idx": i,
-                "touched": False,
-                "frozen": False,
-                "alcanzo_top": False,
-                "alcanzo_bottom": False,
-            })
-
-    # ── Mitigar / congelar / borrar zonas según evolución del precio ──
-    # Procesar en orden cronológico desde su creación
-    activas = []
-    for z in zonas:
+    # Evaluar estado de cada zona (touched / broken)
+    active = []
+    for z in zones:
         start = z["start_idx"]
         for j in range(start + 1, n):
-            hj = float(high.iloc[j])
-            lj = float(low.iloc[j])
-            cj = float(close.iloc[j])
+            hj = float(highs[j])
+            lj = float(lows[j])
+            cj = float(closes[j])
 
-            if not z["frozen"]:
-                # Verificar si tocó / atravesó la zona
-                if hj >= z["top"]:
-                    z["alcanzo_top"] = True
-                if lj <= z["bottom"]:
-                    z["alcanzo_bottom"] = True
+            # ¿Está dentro de la zona?
+            in_zone = lj <= z["top"] and hj >= z["bottom"]
 
-                atravesada = z["alcanzo_top"] and z["alcanzo_bottom"]
-                if atravesada:
-                    z["touched"] = True
-                    z["frozen"] = True
-                else:
-                    tocada = lj <= z["top"] and hj >= z["bottom"]
-                    if tocada:
-                        z["touched"] = True
+            if in_zone and z["state"] == "strong":
+                z["state"] = "touched"
+                z["touched"] = True
 
-            # Si congelada, verificar si se rompe (Close en contra)
-            if z["frozen"]:
-                rota = (z["direction"] == "bull" and cj < z["bottom"]) or \
-                       (z["direction"] == "bear" and cj > z["top"])
-                if rota:
-                    z["invalid"] = True
-                    break
+            # ¿Rota? Close en contra de la zona
+            broken = (z["direction"] == "bull" and cj < z["bottom"]) or \
+                     (z["direction"] == "bear" and cj > z["top"])
+            if broken:
+                z["state"] = "broken"
+                break
 
-        # Solo mantener zonas no invalidadas
-        if not z.get("invalid"):
-            # Marcar como touched si el precio actual está dentro o tocó
-            curr_h = float(high.iloc[-1])
-            curr_l = float(low.iloc[-1])
+        if z["state"] != "broken":
+            # ¿Precio actual dentro?
+            curr_h = float(highs[-1])
+            curr_l = float(lows[-1])
             if curr_l <= z["top"] and curr_h >= z["bottom"]:
                 z["touched"] = True
-            activas.append(z)
+            active.append(z)
 
-    # Limitar a max_zonas más recientes, ordenadas reciente → antiguo
-    activas.sort(key=lambda x: x["start_idx"], reverse=True)
-    return activas[:max_zonas]
+    # Ordenar reciente → antiguo
+    active.sort(key=lambda x: x["start_idx"], reverse=True)
+    active = active[:max_zonas]
+
+    # ¿Vela anterior (-2) creó alguna zona?
+    created_prev = False
+    created_prev_dir = None
+    if n >= 2:
+        for z in active:
+            if z["start_idx"] == n - 2:
+                created_prev = True
+                created_prev_dir = "bullish" if z["direction"] == "bull" else "bearish"
+                break
+
+    # ¿Vela actual (-1) tocó alguna zona activa?
+    touched_now = False
+    touched_now_dir = None
+    for z in active:
+        if z.get("touched") and z["start_idx"] != n - 1:
+            # Verificar si la vela actual está dentro de la zona
+            curr_h = float(highs[-1])
+            curr_l = float(lows[-1])
+            if curr_l <= z["top"] and curr_h >= z["bottom"]:
+                touched_now = True
+                dir_ = "bullish" if z["direction"] == "bull" else "bearish"
+                if touched_now_dir is None:
+                    touched_now_dir = dir_
+                break
+
+    return {
+        "zones": active,
+        "created_prev": created_prev,
+        "created_prev_dir": created_prev_dir,
+        "touched_now": touched_now,
+        "touched_now_dir": touched_now_dir,
+    }
 
 
 @router.get("/tickers")

@@ -21,7 +21,7 @@ try:
         calc_shark_fin as _calc_shark_fin,
         calc_pattern_mw as _calc_pattern_mw,
         calc_pattern_hch as _calc_pattern_hch,
-        detect_fvg as _detect_fvg,
+        detect_supply_demand_zones as _detect_sd,
         detect_all_divergences as _detect_all_divergences,
         calc_rsi as _calc_rsi,
         build_rsi_div_segments as _build_rsi_div_segs,
@@ -37,7 +37,7 @@ except Exception as _tb_err:
     _calc_shark_fin = None
     _calc_pattern_mw = None
     _calc_pattern_hch = None
-    _detect_fvg = None
+    _detect_sd = None
     _detect_all_divergences = None
     _calc_rsi = None
     _build_rsi_div_segs = None
@@ -682,28 +682,45 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 2, "ok": False,
             "texto": "Sin divergencias recientes", "tipo": "info"})
 
-    # ③ Vacíos FVG (Imbalances)
-    fvg_data = None
-    if _detect_fvg is not None:
-        fvgs = _detect_fvg(df, max_zonas=10)
-        # SÓLO FVG que el precio ACTUAL toca o está dentro — no si está lejos.
-        # active: touched=True (dentro o tocando), frozen=False (no rota).
-        # El detector ya filtra por touched/frozen; usamos el primero más cercano.
-        active = [f for f in fvgs if f.get("touched") and not f.get("frozen")]
-        # Ordenar por proximidad al precio (más cercano primero)
-        active.sort(key=lambda f: abs(price - (f["top"]+f["bottom"])/2))
-        for fvg in active:
-            # Ya filtrado por touched=True y not frozen arriba — no aplicar
-            # filtro adicional de proximidad que descarta FVGs válidos
-            fvg_dir = "bullish" if fvg["direction"] == "bull" else "bearish"
-            fvg_text = (f"Vacío FVG {'alcista' if fvg_dir=='bullish' else 'bajista'} "
-                       f"activo {fvg['bottom']:.2f}–{fvg['top']:.2f}")
-            fvg_data = fvg
-            raw.append({"id": 3, "ok": True, "texto": fvg_text, "tipo": fvg_dir, "pts": 2})
+    # ③ ZONAS SUPPLY / DEMAND (Liquidez)
+    sd_data = None
+    sd_extra_pts = 0
+    if _detect_sd is not None:
+        sd = _detect_sd(df, lookback=10, max_zonas=30)
+        zones = sd.get("zones", [])
+        # Zona más cercana al precio actual que esté activa (touched)
+        active_zones = [z for z in zones if z.get("touched")]
+        active_zones.sort(key=lambda z: abs(price - (z["top"]+z["bottom"])/2))
+
+        for zone in active_zones:
+            zone_dir = "bullish" if zone["direction"] == "bull" else "bearish"
+            zone_type = "Demand" if zone["direction"] == "bull" else "Supply"
+            zone_text = (f"Zona {zone_type} activa {zone['bottom']:.2f}–{zone['top']:.2f}")
+            sd_data = zone
+            raw.append({"id": 3, "ok": True, "texto": zone_text, "tipo": zone_dir, "pts": 2})
             break
-    if not fvg_data:
+
+        # Punto extra: zona creada en vela anterior → dirección CONTRARIA
+        if sd.get("created_prev") and sd.get("created_prev_dir"):
+            extra_dir = "bearish" if sd["created_prev_dir"] == "bullish" else "bullish"
+            extra_type = "Demand" if sd["created_prev_dir"] == "bullish" else "Supply"
+            raw.append({"id": 3, "ok": True,
+                "texto": f"Zona {extra_type} creada en vela anterior +1",
+                "tipo": extra_dir, "pts": 1})
+            sd_extra_pts += 1
+
+        # Punto extra: zona tocada en vela actual → dirección CONTRARIA (rebote)
+        if sd.get("touched_now") and sd.get("touched_now_dir"):
+            extra_dir = "bearish" if sd["touched_now_dir"] == "bullish" else "bullish"
+            extra_type = "Demand" if sd["touched_now_dir"] == "bullish" else "Supply"
+            raw.append({"id": 3, "ok": True,
+                "texto": f"Zona {extra_type} tocada ahora +1",
+                "tipo": extra_dir, "pts": 1})
+            sd_extra_pts += 1
+
+    if not sd_data and sd_extra_pts == 0:
         raw.append({"id": 3, "ok": False,
-            "texto": "Sin vacíos FVG activos", "tipo": "info"})
+            "texto": "Sin zonas Supply/Demand activas", "tipo": "info"})
 
     # ④ Patrones M/W/HCH — ELIMINADOS del scoring.
     # Los patrones crean contradicciones falsas con la estrategia de
@@ -2209,12 +2226,13 @@ async def get_chart(ticker: str):
         except Exception as _pe:
             print(f"[patterns] Error calculando patrones para {sym}: {_pe}")
 
-        # Vacíos FVG para el chart
-        fvg_zonas = _detect_fvg(df, max_zonas=10) if _detect_fvg else []
+        # Zonas Supply/Demand para el chart
+        sd_result = _detect_sd(df, lookback=10, max_zonas=30) if _detect_sd else {"zones": []}
         fvg_chart = [
             {"top": z["top"], "bottom": z["bottom"],
-             "direction": z["direction"], "touched": z.get("touched", False)}
-            for z in fvg_zonas
+             "direction": z["direction"], "touched": z.get("touched", False),
+             "state": z.get("state", "strong")}
+            for z in sd_result.get("zones", [])
         ]
 
         # Divergencias RSI para el chart (segmentos x1/y1→x2/y2 en espacio RSI)
