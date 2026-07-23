@@ -1,0 +1,326 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © pury_santana
+
+//@version=6
+indicator(title="Liquidez-RSI", shorttitle="Liquidez-RSI", overlay=true,
+     max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ① ZONAS DE LIQUIDEZ
+// ════════════════════════════════════════════════════════════════════════
+gZ = "① Zonas de Liquidez"
+extendBars       = input.int(20,    "Extender zona (velas)",         minval=1,   group=gZ)
+noWeakZones      = input.bool(true, "Ocultar zonas rotas",                       group=gZ)
+recolorRetouch   = input.bool(true, "Recolorear al tocar",                       group=gZ)
+lookback         = input.int(10,    "Pivot Lookback",                minval=2, maxval=50, group=gZ)
+showFarEdgePrice = input.bool(true, "Mostrar precio en etiqueta",               group=gZ)
+
+gZC = "① Colores Zonas"
+demandStrong  = input.color(color.new(#008000, 60), "Demand Fuerte",   group=gZC)
+demandRetouch = input.color(color.new(#7FFF00, 75), "Demand Tocada",   group=gZC)
+demandWeak    = input.color(color.new(#808000, 80), "Demand Débil",    group=gZC)
+supplyStrong  = input.color(color.new(#FF0000, 60), "Supply Fuerte",   group=gZC)
+supplyRetouch = input.color(color.new(#FF7F50, 75), "Supply Tocada",   group=gZC)
+supplyWeak    = input.color(color.new(#DB7093, 80), "Supply Débil",    group=gZC)
+borderCol     = input.color(color.new(color.black, 0), "Borde",        group=gZC)
+labelTextCol  = input.color(color.black, "Color texto etiqueta",       group=gZC)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ② RSI + OB/OS
+// ════════════════════════════════════════════════════════════════════════
+gR = "② RSI"
+rsiLength = input.int(14, "Longitud RSI", minval=1, group=gR)
+obLevel   = input.int(70, "Nivel Sobrecompra", minval=50, maxval=100, group=gR)
+osLevel   = input.int(30, "Nivel Sobreventa",  minval=0,  maxval=50,  group=gR)
+showDots  = input.bool(true, "Mostrar puntos OB/OS sobre velas", group=gR)
+dotOffset = input.int(3, "Offset puntos (ticks)", minval=1, maxval=20, group=gR)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ③ DIVERGENCIAS — NIVEL 1
+// ════════════════════════════════════════════════════════════════════════
+g1   = "③ Nivel 1 — Corto"
+lb1L = input.int(5,   "Lookback Izquierda", minval=1, maxval=100,  group=g1)
+lb1R = input.int(5,   "Lookback Derecha",   minval=1, maxval=100,  group=g1)
+rn1L = input.int(5,   "Min Velas Pivotes",  minval=1, maxval=100,  group=g1)
+rn1U = input.int(50,  "Max Velas Pivotes",  minval=1, maxval=2000, group=g1)
+sh1  = input.bool(true, "Activar Nivel 1",  group=g1)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ④ DIVERGENCIAS — NIVEL 2
+// ════════════════════════════════════════════════════════════════════════
+g2   = "④ Nivel 2 — Medio"
+lb2L = input.int(10,  "Lookback Izquierda", minval=1, maxval=100,  group=g2)
+lb2R = input.int(10,  "Lookback Derecha",   minval=1, maxval=100,  group=g2)
+rn2L = input.int(10,  "Min Velas Pivotes",  minval=1, maxval=100,  group=g2)
+rn2U = input.int(200, "Max Velas Pivotes",  minval=1, maxval=2000, group=g2)
+sh2  = input.bool(true, "Activar Nivel 2",  group=g2)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ⑤ DIVERGENCIAS — NIVEL 3
+// ════════════════════════════════════════════════════════════════════════
+g3   = "⑤ Nivel 3 — Largo"
+lb3L = input.int(20,   "Lookback Izquierda", minval=1, maxval=100,  group=g3)
+lb3R = input.int(20,   "Lookback Derecha",   minval=1, maxval=100,  group=g3)
+rn3L = input.int(20,   "Min Velas Pivotes",  minval=1, maxval=100,  group=g3)
+rn3U = input.int(1000, "Max Velas Pivotes",  minval=1, maxval=2000, group=g3)
+sh3  = input.bool(true, "Activar Nivel 3",   group=g3)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ⑥ VISUAL DIVERGENCIAS
+// ════════════════════════════════════════════════════════════════════════
+gV         = "⑥ Visual Divergencias"
+showBull   = input.bool(true,  "Mostrar Alcistas",        group=gV)
+showBear   = input.bool(true,  "Mostrar Bajistas",        group=gV)
+showHidden = input.bool(true,  "Mostrar Ocultas",         group=gV)
+showLabels = input.bool(false, "Mostrar Etiquetas (▲▼)", group=gV)
+
+// ════════════════════════════════════════════════════════════════════════
+//  CÁLCULO RSI
+// ════════════════════════════════════════════════════════════════════════
+rsiVal = ta.rsi(close, rsiLength)
+
+// ════════════════════════════════════════════════════════════════════════
+//  PUNTOS OB/OS SOBRE LAS VELAS
+// ════════════════════════════════════════════════════════════════════════
+if showDots
+    off = dotOffset * syminfo.mintick
+    if rsiVal >= obLevel
+        label.new(bar_index, high + off, "",
+             style=label.style_circle,
+             color=color.new(color.red, 0),
+             size=size.tiny)
+    if rsiVal <= osLevel
+        label.new(bar_index, low - off, "",
+             style=label.style_circle,
+             color=color.new(#00E676, 0),
+             size=size.tiny)
+
+// ════════════════════════════════════════════════════════════════════════
+//  DIVERGENCIAS — HELPERS
+// ════════════════════════════════════════════════════════════════════════
+transpByLevel(lv) =>
+    lv == 1 ? 0 : lv == 2 ? 40 : 65
+
+divColor(bear, hidden, lv) =>
+    t = transpByLevel(lv)
+    hidden
+         ? (bear ? color.new(#FF9800, t) : color.new(#00BCD4, t))
+         : (bear ? color.new(#FF1744, t) : color.new(#00E676, t))
+
+dibujarDiv(lv, bear, hidden, bar2, price2, bar1, price1) =>
+    col = divColor(bear, hidden, lv)
+    lw  = lv == 1 ? 3 : lv == 2 ? 2 : 1
+    if hidden
+        lw := math.max(1, lw - 1)
+    line.new(bar1, price1, bar2, price2, color=col, width=lw)
+    if showLabels
+        lbl = (hidden ? "H" : "") + (bear ? "▼" : "▲") + str.tostring(lv)
+        off2 = bear
+             ? price2 + dotOffset * syminfo.mintick * 2
+             : price2 - dotOffset * syminfo.mintick * 2
+        label.new(bar2, off2, lbl,
+             style    = bear ? label.style_label_down : label.style_label_up,
+             color    = color.new(color.black, 100),
+             textcolor= col,
+             size     = size.tiny)
+
+// ════════════════════════════════════════════════════════════════════════
+//  DIVERGENCIAS — ESTADO PERSISTENTE POR NIVEL
+// ════════════════════════════════════════════════════════════════════════
+var array<int>   plBar   = array.new<int>(4,   na)
+var array<float> plRsiA  = array.new<float>(4, na)
+var array<float> plPrice = array.new<float>(4, na)
+var array<int>   phBar   = array.new<int>(4,   na)
+var array<float> phRsiA  = array.new<float>(4, na)
+var array<float> phPrice = array.new<float>(4, na)
+
+procesarDivergencia(lbL, lbR, rnL, rnU, lv) =>
+    // ── Mínimos (alcistas) ──
+    pl = ta.pivotlow(rsiVal, lbL, lbR)
+    if not na(pl)
+        pivBar   = bar_index - lbR
+        pivRsi   = pl
+        pivLow   = low[lbR]
+        prevBar  = array.get(plBar, lv)
+        if not na(prevBar)
+            dist = pivBar - prevBar
+            if dist >= rnL and dist <= rnU
+                prevPrice = array.get(plPrice, lv)
+                prevRsiV  = array.get(plRsiA,  lv)
+                // Regular Alcista: precio LL, RSI HL
+                if showBull and pivLow < prevPrice and pivRsi > prevRsiV
+                    dibujarDiv(lv, false, false, pivBar, pivLow, prevBar, prevPrice)
+                // Oculta Alcista: precio HL, RSI LL
+                if showHidden and pivLow > prevPrice and pivRsi < prevRsiV
+                    dibujarDiv(lv, false, true, pivBar, pivLow, prevBar, prevPrice)
+        array.set(plBar,   lv, pivBar)
+        array.set(plRsiA,  lv, pivRsi)
+        array.set(plPrice, lv, pivLow)
+
+    // ── Máximos (bajistas) ──
+    ph = ta.pivothigh(rsiVal, lbL, lbR)
+    if not na(ph)
+        pivBar   = bar_index - lbR
+        pivRsi   = ph
+        pivHigh  = high[lbR]
+        prevBar  = array.get(phBar, lv)
+        if not na(prevBar)
+            dist = pivBar - prevBar
+            if dist >= rnL and dist <= rnU
+                prevPrice = array.get(phPrice, lv)
+                prevRsiV  = array.get(phRsiA,  lv)
+                // Regular Bajista: precio HH, RSI LH
+                if showBear and pivHigh > prevPrice and pivRsi < prevRsiV
+                    dibujarDiv(lv, true, false, pivBar, pivHigh, prevBar, prevPrice)
+                // Oculta Bajista: precio LH, RSI HH
+                if showHidden and pivHigh < prevPrice and pivRsi > prevRsiV
+                    dibujarDiv(lv, true, true, pivBar, pivHigh, prevBar, prevPrice)
+        array.set(phBar,   lv, pivBar)
+        array.set(phRsiA,  lv, pivRsi)
+        array.set(phPrice, lv, pivHigh)
+
+if sh1
+    procesarDivergencia(lb1L, lb1R, rn1L, rn1U, 1)
+if sh2
+    procesarDivergencia(lb2L, lb2R, rn2L, rn2U, 2)
+if sh3
+    procesarDivergencia(lb3L, lb3R, rn3L, rn3U, 3)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ZONAS DE LIQUIDEZ — LÓGICA
+// ════════════════════════════════════════════════════════════════════════
+var int   STATE_STRONG  = 0
+var int   STATE_RETOUCH = 1
+var int   STATE_WEAK    = 2
+
+var float[] zoneTop      = array.new_float(0)
+var float[] zoneBot      = array.new_float(0)
+var int[]   zoneState    = array.new_int(0)
+var bool[]  zoneIsDemand = array.new_bool(0)
+var box[]   zoneBox      = array.new_box(0)
+var label[] zoneLabel    = array.new_label(0)
+
+atrVal   = ta.atr(14)
+zoneHalf = atrVal * 0.15
+
+pivotHigh = ta.pivothigh(high, lookback, lookback)
+pivotLow  = ta.pivotlow(low,  lookback, lookback)
+
+getZoneColor(isDemand, state) =>
+    if isDemand
+        state == STATE_STRONG  ? demandStrong :
+         state == STATE_RETOUCH ? demandRetouch : demandWeak
+    else
+        state == STATE_STRONG  ? supplyStrong :
+         state == STATE_RETOUCH ? supplyRetouch : supplyWeak
+
+addZone(topPrice, botPrice, isDemand) =>
+    isDuplicate = false
+    int zSize = array.size(zoneTop)
+    if zSize > 0
+        for i = 0 to zSize - 1
+            existTop    = array.get(zoneTop, i)
+            existDemand = array.get(zoneIsDemand, i)
+            if existDemand == isDemand and math.abs(existTop - topPrice) < zoneHalf * 2
+                isDuplicate := true
+                break
+    if not isDuplicate
+        c = isDemand ? demandStrong : supplyStrong
+        newBox = box.new(
+             left         = bar_index - lookback,
+             top          = topPrice,
+             right        = bar_index + extendBars,
+             bottom       = botPrice,
+             bgcolor      = c,
+             border_color = borderCol,
+             border_width = 1)
+        priceStr = showFarEdgePrice ? str.tostring(isDemand ? botPrice : topPrice, format.mintick) : ""
+        newLabel = label.new(
+             x         = bar_index + extendBars,
+             y         = isDemand ? botPrice : topPrice,
+             text      = priceStr,
+             color     = color.new(color.white, 100),
+             textcolor = labelTextCol,
+             style     = label.style_label_left,
+             size      = size.small)
+        array.push(zoneTop,      topPrice)
+        array.push(zoneBot,      botPrice)
+        array.push(zoneState,    STATE_STRONG)
+        array.push(zoneIsDemand, isDemand)
+        array.push(zoneBox,      newBox)
+        array.push(zoneLabel,    newLabel)
+
+if not na(pivotHigh)
+    addZone(pivotHigh + zoneHalf, pivotHigh - zoneHalf, false)
+if not na(pivotLow)
+    addZone(pivotLow + zoneHalf, pivotLow - zoneHalf, true)
+
+// ── Actualizar estado de zonas ──
+int totalZones = array.size(zoneTop)
+if totalZones > 0
+    toDelete = array.new_int(0)
+    for i = 0 to totalZones - 1
+        top      = array.get(zoneTop,      i)
+        bot      = array.get(zoneBot,      i)
+        state    = array.get(zoneState,    i)
+        isDemand = array.get(zoneIsDemand, i)
+        b        = array.get(zoneBox,      i)
+        lbl      = array.get(zoneLabel,    i)
+
+        box.set_right(b,   bar_index + extendBars)
+        label.set_x(lbl,   bar_index + extendBars)
+
+        priceInZone = high >= bot and low <= top
+        priceBroken = isDemand ? close < bot : close > top
+        newState    = state
+
+        if priceBroken
+            newState := STATE_WEAK
+        else if priceInZone and state == STATE_STRONG
+            newState := STATE_RETOUCH
+
+        if newState != state
+            array.set(zoneState, i, newState)
+            newColor = getZoneColor(isDemand, newState)
+            if newState == STATE_WEAK
+                if noWeakZones
+                    array.push(toDelete, i)
+                else
+                    box.set_bgcolor(b, newColor)
+            else if recolorRetouch or newState == STATE_STRONG
+                box.set_bgcolor(b, newColor)
+
+    int delSize = array.size(toDelete)
+    if delSize > 0
+        for j = delSize - 1 to 0
+            idx = array.get(toDelete, j)
+            box.delete(array.get(zoneBox,  idx))
+            label.delete(array.get(zoneLabel, idx))
+            array.remove(zoneTop,      idx)
+            array.remove(zoneBot,      idx)
+            array.remove(zoneState,    idx)
+            array.remove(zoneIsDemand, idx)
+            array.remove(zoneBox,      idx)
+            array.remove(zoneLabel,    idx)
+
+// ── Límite máximo de zonas ──
+maxZones = 60
+if array.size(zoneTop) > maxZones
+    box.delete(array.get(zoneBox, 0))
+    label.delete(array.get(zoneLabel, 0))
+    array.remove(zoneTop,      0)
+    array.remove(zoneBot,      0)
+    array.remove(zoneState,    0)
+    array.remove(zoneIsDemand, 0)
+    array.remove(zoneBox,      0)
+    array.remove(zoneLabel,    0)
+
+// ════════════════════════════════════════════════════════════════════════
+//  ALERTAS
+// ════════════════════════════════════════════════════════════════════════
+alertcondition(rsiVal >= obLevel,
+     title="RSI Sobrecompra",
+     message="Liquidez-RSI — Sobrecompra en {{ticker}} ({{interval}})")
+alertcondition(rsiVal <= osLevel,
+     title="RSI Sobreventa",
+     message="Liquidez-RSI — Sobreventa en {{ticker}} ({{interval}})")
