@@ -421,47 +421,7 @@ def calc_trading_band(df):
     return df
 
 
-def calc_fractales(precio, cfg, n_above=30, n_below=30):
-    ks, ms, zs = cfg["key_spacing"], cfg["major_spacing"], cfg["zone_size"]
-    base = round(precio / ks) * ks
-    levels = []
-    for i in range(-n_below, n_above + 1):
-        p = base + i * ks
-        levels.append(
-            {
-                "price": p,
-                "is_major": round(p % ms) == 0,
-                "zone_top": p + zs,
-                "zone_bot": p - zs,
-            }
-        )
-    return {"levels": levels, "key_spacing": ks, "major_spacing": ms, "zone_size": zs}
-
-
-def detect_fractal_touch(high, low, close, fractales):
-    zs, best = fractales["zone_size"], None
-    for level in fractales["levels"]:
-        lp = level["price"]
-        crosses = high >= (lp - zs) and low <= (lp + zs)
-        in_zone = abs(close - lp) <= zs * 1.5
-        if crosses or in_zone:
-            tipo = "soporte" if close >= lp else "resistencia"
-            c = {
-                "touch": True,
-                "price": lp,
-                "is_major": level["is_major"],
-                "tipo": tipo,
-                "crosses": crosses,
-            }
-            if best is None or (not best["is_major"] and level["is_major"]):
-                best = c
-    return best or {
-        "touch": False,
-        "price": None,
-        "is_major": False,
-        "tipo": None,
-        "crosses": False,
-    }
+# calc_fractales / detect_fractal_touch — ELIMINADOS (sistema legacy con TradingBand)
 
 
 def calc_opens(df):
@@ -553,8 +513,7 @@ async def get_index_components_context(ticker: str) -> dict | None:
 
 
 def detect_alerts(df, ticker="", ema_short=200, ema_long=800, cfg=None):
-    """Alertas de vigilancia — FOCO: RSI extremo, Divergencias, FVG, Patrones.
-    EMAs y fractales eliminados del sistema de alertas (quedan en chart visual)."""
+    """Alertas de vigilancia — FOCO: RSI extremo, Divergencias, Zonas Supply/Demand."""
     alertas = []
     n = len(df) - 1
     if n < 2:
@@ -600,16 +559,14 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     """
     Evalúa las confluencias principales con validación DIRECCIONAL.
 
-    NUEVO FOCO: RSI, Divergencias, Vacíos (FVG), Patrones, HOD/LOD
-    EMAs y TradingBand se mantienen en chart pero NO puntúan en confluencias.
+    FOCO: RSI, Divergencias, Zonas Supply/Demand, Soportes/Resistencias, Shark Fin.
 
     Direcciones:
       ① RSI <30 o >70 → extremo (+2)  |  RSI 30-44 / 56-70 → interés (+1)  |  45-55 → neutro
       ② Divergencia RSI activa → bullish/bearish según tipo
-      ③ Vacío FVG activo cerca del precio → bullish/bearish según dirección
-      ④ Patrón M/W/HCH confirmado → bearish/bullish
-      ⑤ HOD/LOD → referencia de liquidez (no puntua)
-      ⑥ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
+      ③ Zona Supply/Demand activa cerca del precio → bullish/bearish según dirección
+      ④ HOD/LOD/PDH/PDL → soportes y resistencias (+1 cada uno)
+      ⑤ Shark Fin → agotamiento extremo (+2 crossed / +4 exceeded)
     """
     if len(df) < 14:
         return None
@@ -724,7 +681,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
 
     # ④ Patrones M/W/HCH — ELIMINADOS del scoring.
     # Los patrones crean contradicciones falsas con la estrategia de
-    # liquidez + divergencias + FVG. Se mantienen en chart visual pero
+    # liquidez + divergencias + Supply/Demand. Se mantienen en chart visual pero
     # NO puntúan ni determinan dirección en confluencias.
     pattern_data = None
     raw.append({"id": 4, "ok": False,
@@ -892,7 +849,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     # ── Dirección dominante ──
     # Señales FUERTES: Divergencias (2) + Shark Fin (7)
     # RSI (1) es de contexto (zona) — nunca determina dirección por sí solo.
-    # FVG (3) y HOD/LOD (5) son confirmaciones direccionales.
+    # Supply/Demand (3) y HOD/LOD (5) son confirmaciones direccionales.
     # Patrones M/W/HCH eliminados — creaban contradicciones falsas.
     FUERTES = {2, 7}
     bullish_fuertes = [c for c in activas_bullish if c["id"] in FUERTES]
@@ -1015,208 +972,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     }
 
 
-# ─── ALERTAS POR CONFLUENCIAS DE TRADINGBAND ─────────────────
-
-async def _check_tb_confluences(tickers: list, label: str = "") -> dict:
-    """
-    Alertas por confluencias de TradingBand:
-      1) Cruce Trigger/Average → cambio de tendencia
-      2) Divergencia RSI en zona (RSI≤45 alcista / RSI≥55 bajista)
-      3) Toque de nivel clave / fractal
-    Solo alerta si >=2 confluencias alineadas y el cruce ocurrió
-    en la última vela 1h (≤1h de antigüedad).
-    """
-    if not HAS_NOTIFIER or not HAS_TB:
-        return {}
-    if _detect_divs is None:
-        return {}
-
-    now = time.time()
-    alerts_by_ticker: dict = {}
-
-    for t in tickers:
-        try:
-            cfg = _TB_CFG.get(t.upper(), _TB_CFG.get("_default"))
-
-            df, bar_type = await async_download_rb(t.upper())
-            if df.empty:
-                continue
-
-            # ─── INYECTAR PRECIO ACTUAL ───
-            live_price = await _get_current_price(t.upper())
-            if live_price and not df.empty:
-                last_close = float(df["Close"].iloc[-1])
-                if abs(live_price - last_close) / last_close > 0.0005:
-                    new_idx = pd.Timestamp.now(tz="UTC")
-                    ghost = pd.DataFrame({
-                        "Open": [live_price], "High": [max(live_price, last_close)],
-                        "Low":  [min(live_price, last_close)], "Close": [live_price],
-                        "Volume": [0.0],
-                    }, index=[new_idx])
-                    df = pd.concat([df, ghost])
-                    df.sort_index(inplace=True)
-            # ─── FIN INYECCIÓN ───
-
-            df_calc = df.copy()
-            df_calc.columns = [c.lower() for c in df_calc.columns]
-            df_calc = df_calc.dropna(subset=["close"])
-            if len(df_calc) < 40:
-                continue
-
-            close  = df_calc["close"]
-            high   = df_calc["high"]
-            low    = df_calc["low"]
-
-            # TradingBand: SMA12(Trigger) + SMA12(Average)
-            trigger = close.rolling(12, min_periods=12).mean()
-            average = trigger.rolling(12, min_periods=12).mean()
-
-            # RSI (mismo cálculo que el chart)
-            rsi = _calc_rsi_tv(close, 14) if _calc_rsi_tv else None
-            if rsi is None or rsi.notna().sum() < 40:
-                continue
-
-            n = len(df_calc)
-            # Revisar últimas 2 velas
-            for offset in range(2):
-                i = n - 1 - offset
-                if i < 1:
-                    continue
-
-                # Filtro de antigüedad: velas 1h <= 1h de antigüedad
-                ts = df_calc.index[i]
-                try:
-                    ts_parsed = pd.Timestamp(ts)
-                    if ts_parsed.tzinfo is None:
-                        ts_parsed = ts_parsed.tz_localize("UTC")
-                    age_min = (pd.Timestamp.now(tz="UTC") - ts_parsed).total_seconds() / 60
-                    max_age_min = 60   # 1 hora
-                    if age_min > max_age_min:
-                        continue
-                except Exception:
-                    continue
-
-                t_now = trigger.iloc[i]
-                a_now = average.iloc[i]
-                t_prev = trigger.iloc[i - 1]
-                a_prev = average.iloc[i - 1]
-                if pd.isna(t_now) or pd.isna(a_now) or pd.isna(t_prev) or pd.isna(a_prev):
-                    continue
-
-                cross_up   = (t_now > a_now) and (t_prev <= a_prev)
-                cross_down = (t_now < a_now) and (t_prev >= a_prev)
-                if not cross_up and not cross_down:
-                    continue
-
-                direction = "bullish" if cross_up else "bearish"
-                price     = float(close.iloc[i])
-
-                # Divergencias recientes
-                df_slice = df_calc.iloc[:i + 1].copy()
-                rsi_slice = rsi.iloc[:i + 1].copy()
-                valid_mask = rsi_slice.notna()
-                divs = []
-                if valid_mask.sum() >= 40:
-                    df_aligned = df_slice[valid_mask].copy()
-                    rsi_valid  = rsi_slice[valid_mask]
-                    all_divs   = _detect_divs(df_aligned, rsi_valid)
-                    divs       = [d for d in all_divs if d.get("bar", 0) >= i - 40]
-
-                zone_divs = []
-                for d in divs:
-                    is_bull = d["type"] in ("bull", "hbull")
-                    is_bear = d["type"] in ("bear", "hbear")
-                    if direction == "bullish" and is_bull and d.get("in_zone"):
-                        zone_divs.append(d)
-                    elif direction == "bearish" and is_bear and d.get("in_zone"):
-                        zone_divs.append(d)
-
-                # Toque de nivel clave
-                main_cfg = get_cfg(t)
-                frac_touch = False
-                frac_info  = None
-                if main_cfg:
-                    fr = calc_fractales(price, main_cfg)
-                    ft = detect_fractal_touch(float(high.iloc[i]), float(low.iloc[i]), price, fr)
-                    frac_touch = ft["touch"]
-                    frac_info  = ft
-
-                # Toque de TradingBand (precio toca Trigger o Average)
-                band_touch = False
-                band_which = ""
-                h_val = float(high.iloc[i])
-                l_val = float(low.iloc[i])
-                t_now_f = float(t_now)
-                a_now_f = float(a_now)
-                # Tolerancia: 0.3% del precio para activos normales, 0.1% para forex
-                tol_pct = 0.001 if any(x in t for x in ["JPY", "USD"]) else 0.003
-                band_tol = price * tol_pct
-                if h_val >= t_now_f - band_tol and l_val <= t_now_f + band_tol:
-                    band_touch = True
-                    band_which = "Trigger"
-                elif h_val >= a_now_f - band_tol and l_val <= a_now_f + band_tol:
-                    band_touch = True
-                    band_which = "Average"
-
-                # Construir confluencias
-                confluencias = [{
-                    "id": "tb_cross",
-                    "texto": f"TradingBand {direction.upper()}",
-                    "ok": True, "tipo": direction,
-                }]
-                if zone_divs:
-                    best = zone_divs[0]
-                    confluencias.append({
-                        "id": "rsi_div",
-                        "texto": f"Divergencia RSI {best['type'].upper()} N{best['level']} (RSI {best['rsi']})",
-                        "ok": True, "tipo": direction,
-                    })
-                if frac_touch:
-                    confluencias.append({
-                        "id": "fractal",
-                        "texto": f"Toque nivel clave ({frac_info['tipo'].upper()})",
-                        "ok": True, "tipo": direction,
-                    })
-                if band_touch:
-                    confluencias.append({
-                        "id": "tb_band",
-                        "texto": f"Precio toca banda TradingBand ({band_which})",
-                        "ok": True, "tipo": direction,
-                    })
-
-                puntos = sum(1 for c in confluencias if c.get("ok"))
-                if puntos >= 2:
-                    # Dedup por combo de confluencias (así nuevas confluencias re-avisan)
-                    dedup = f"TB_CONF_{t}_{direction}_{'div' if zone_divs else ''}_{'frac' if frac_touch else ''}_{'band' if band_touch else ''}"
-                    if now - _sent_cache.get(dedup, 0) > _DEDUP_SECONDS:
-                        try:
-                            ts_utc = ts_parsed.tz_convert("UTC") if ts_parsed.tzinfo else ts_parsed.tz_localize("UTC")
-                            hora = ts_utc.strftime("%d/%m %H:%M")
-                            ts_iso = ts_utc.isoformat()
-                        except Exception:
-                            hora = ""
-                            ts_iso = ""
-
-                        resultado = {
-                            "ticker": t.upper(), "precio": price,
-                            "estado": "FAVORABLE" if puntos >= 3 else "INTERESANTE",
-                            "nivel": direction, "direction": direction,
-                            "puntos": puntos, "confluencias": confluencias,
-                            "alert": True,
-                        }
-                        alerts_by_ticker.setdefault(t.upper(), []).append({
-                            "nivel": direction,
-                            "msg": f"[{t.upper()}] {resultado['estado']} — {puntos} confluencias ({hora})",
-                            "hora": hora, "ts_utc_iso": ts_iso,
-                            "resultado": resultado,
-                        })
-                        _sent_cache[dedup] = now
-                        print(f"[tb-confl] {t} {direction} {puntos} confluencias @ {hora}")
-                        break  # sólo 1 alerta por ticker por ejecución
-        except Exception as e:
-            print(f"[tb-confl] Error en {t}: {e}")
-
-    return alerts_by_ticker
+# ─── (ALERTAS POR CONFLUENCIAS DE TRADINGBAND — ELIMINADO: sistema legacy con MonarcaBand/fractales) ───
 
 
 # ─── SCHEDULER ───────────────────────────────────────────────
@@ -1559,11 +1315,7 @@ async def scheduled_watch():
         watch_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
         print("[scheduler] Fin de semana — revisando solo BTC-USD")
 
-    # 1) Alertas del sistema de confluencias actual (EMA/RSI/FVG/patrones/div)
-    # └── TradingBand antiguo eliminado: no se usan Trigger/Average, fractales, ni
-    #     “Precio toca banda TradingBand” en las alertas.  
-
-    # 2) Alertas clásicas de confluencias EMA/RSI/FVG/patrones
+    # Alertas del sistema de confluencias actual (RSI/Divergencias/Supply-Demand/SharkFin)
     alerts_by_ticker = await _check_tickers(
         watch_tickers, num_candles=1, label="scheduler"
     )
@@ -1592,7 +1344,7 @@ async def scheduled_watch():
 
 
 async def daily_catchup():
-    """Catch-up al arrancar: revisa SOLO la última vela de rango (≤12h) — nada muy antiguo."""
+    """Catch-up al arrancar: revisa SOLO la última vela (≤12h) — nada muy antiguo."""
     if not HAS_NOTIFIER:
         return
 
@@ -1601,10 +1353,7 @@ async def daily_catchup():
         catchup_tickers = [t for t in WATCH_TICKERS if t == "BTC-USD"]
         print("[catchup] Fin de semana — revisando solo BTC-USD")
 
-    # 1) Sistema TradingBand antiguo DESACTIVADO (no se envían alertas de
-    #    Trigger/Average, fractales, ni “Precio toca banda TradingBand”).
-
-    # 2) Alertas del sistema actual
+    # Alertas del sistema actual
     print("[catchup] Revisando vela 1h actual (máx 1h de antigüedad)…")
     alerts_by_ticker = await _check_tickers(
         catchup_tickers, num_candles=1, label="catchup", max_per_ticker=1
@@ -2228,7 +1977,7 @@ async def get_chart(ticker: str):
 
         # Zonas Supply/Demand para el chart
         sd_result = _detect_sd(df, lookback=10, max_zonas=30) if _detect_sd else {"zones": []}
-        fvg_chart = [
+        sd_chart = [
             {"top": z["top"], "bottom": z["bottom"],
              "direction": z["direction"], "touched": z.get("touched", False),
              "state": z.get("state", "strong")}
@@ -2257,7 +2006,7 @@ async def get_chart(ticker: str):
                 "tb_trigger": tb_trig,
                 "tb_average": tb_avg,
                 "tb_crosses": crosses,
-                "fvg": fvg_chart,
+                "sd": sd_chart,
                 "rsi_divs": rsi_divs,
             },
             "tb_last": {

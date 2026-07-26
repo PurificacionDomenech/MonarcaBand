@@ -732,8 +732,6 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     else:
         estado_emoji = "⚪"
 
-    dir_label = ""
-
     dia_map_es = {"Monday":"Lunes","Tuesday":"Martes","Wednesday":"Miércoles",
                   "Thursday":"Jueves","Friday":"Viernes","Saturday":"Sábado","Sunday":"Domingo"}
     dia_label = dia_map_es.get(dia_display, dia_display) if lang == "es" else dia_display
@@ -771,8 +769,6 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
 
     rsi_str = f"RSI {rsi:.1f}" if rsi is not None else "RSI —"
     estado_line = f"{estado_emoji} <b>{estado}</b>  ·  {rsi_str}  ·  {conf_label}"
-    if dir_label:
-        estado_line += f"  ·  {dir_label}"
     lines.append(estado_line)
 
     if contr_warn:
@@ -1119,17 +1115,7 @@ async def notify_divergences(divs_by_ticker: dict) -> None:
     print(f"[notifier] Divergencias RSI enviadas — {sum(len(v) for v in divs_by_ticker.values())} divergencia(s) en {len(divs_by_ticker)} ticker(s)")
 
 
-# ── Setup Engine — alertas de alta probabilidad ───────────────
-
-_SETUP_DIR_EMOJI = {"bullish": "🟢", "bearish": "🔴"}
-_SETUP_DIR_ES    = {"bullish": "ALCISTA", "bearish": "BAJISTA"}
-_SETUP_LVL_ES = {
-    "hod": "HOD", "lod": "LOD",
-    "pdh": "PDH", "pdl": "PDL",
-    "wkh": "Máx semana", "wkl": "Mín semana",
-    "mth": "Máx mes",    "mtl": "Mín mes",
-}
-_SETUP_TIER_ES = {"minor": "menor", "medium": "medio", "major": "mayor"}
+# ── Setup Engine — ELIMINADO (código legacy) ──────────────────
 
 
 def _fmt_price(p: float) -> str:
@@ -1145,244 +1131,7 @@ def _fmt_price(p: float) -> str:
     return f"{p:.5f}"
 
 
-def _build_setup_tg_msg(ticker: str, result: dict, now_str: str) -> str:
-    """
-    Construye el mensaje HTML de Telegram segun especificacion exacta.
-    Formato: [EMOJI] TRADING BAND - [ESTADO]
-    Puntuacion maxima: 18 pts
-    """
-    nivel     = result.get("nivel_alerta", "normal")
-    direction = result.get("direction", "bullish")
-    puntos    = result.get("puntos", 0)
-    estado    = result.get("estado", "FAVORABLE")
-    sweep     = result.get("sweep", {})
-    divergence= result.get("divergence", {})
-    breakdown = result.get("breakdown", {})
-    sd_zone   = result.get("sd_zone")
-    patterns  = result.get("patterns", {})
-    session_names = result.get("session_names", [])
-    sl        = result.get("sl")
-    tp        = result.get("tp")
-    price_now = result.get("price", 0)
-
-    dir_es = _SETUP_DIR_ES.get(direction, direction.upper())
-    dir_emoji = "📈" if direction == "bullish" else "📉"
-
-    # EMOJI segun puntuacion
-    if puntos >= 16:
-        emoji_estado = "🚨🚨"
-    elif puntos >= 13:
-        emoji_estado = "🚨"
-    elif puntos >= 11:
-        emoji_estado = "🟢"
-    elif puntos >= 9:
-        emoji_estado = "🟡"
-    else:
-        emoji_estado = "⏳"
-
-    # ESTADO segun puntuacion
-    estado_map = {
-        "FAVORABLE":       "FAVORABLE",
-        "MUY_FAVORABLE":   "MUY FAVORABLE",
-        "SEÑAL_MÁXIMA":    "SEÑAL MÁXIMA",
-        "CONFLUENCIA_TOTAL": "CONFLUENCIA TOTAL",
-        "CONSIDERAR":      "CONSIDERAR",
-    }
-    estado_str = estado_map.get(estado, estado.replace("_", " "))
-
-    price_str = _fmt_price(price_now) if price_now else _fmt_price(divergence.get("price") or sweep.get("level_price"))
-    level_name = _SETUP_LVL_ES.get(sweep.get("level_type", ""), sweep.get("level_type", "").upper())
-    level_px   = _fmt_price(sweep.get("level_price"))
-
-    rsi_val    = divergence.get("rsi")
-    rsi_prev   = divergence.get("rsi_prev")
-    div_level  = divergence.get("level", 1)
-
-    # Setup description
-    pat_name = next(iter(patterns.keys()), "")
-    pat_estado = (patterns.get(pat_name) or {}).get("estado", "") if patterns else ""
-    setup_desc = ""
-    if pat_name and pat_estado:
-        setup_desc = f"{pat_name} {pat_estado} + trampa sobre {level_name}"
-    else:
-        setup_desc = f"trampa sobre {level_name}"
-
-    out_lines = [
-        f"{emoji_estado} TRADING BAND - {estado_str}",
-        "",
-        f"📊 {ticker}  |  1H  |  {price_str}",
-        f"🕐 {now_str}",
-        "",
-        f"{dir_emoji} {dir_es} - {setup_desc}",
-        "",
-    ]
-
-    # Lista de confluencias activas — usar flags reales, no inferir por puntos
-    out_lines.append(f"✅ Divergencia RSI {direction} N{div_level} activa (RSI {rsi_val:.0f} vs {rsi_prev:.0f})")
-    if breakdown.get("has_n2"):
-        out_lines.append(f"✅ Divergencia RSI {direction} N2 (segundo nivel, mas profunda) activa (+1)")
-    if breakdown.get("has_n3"):
-        out_lines.append(f"✅ Divergencia RSI {direction} N3 (tercer nivel, maxima fuerza) activa (+2)")
-
-    out_lines.append(f"✅ {level_name} barrido hace {sweep.get('candles_ago', 1)} vela(s) ({level_px})")
-    out_lines.append(f"✅ Trampa confirmada - cerro {direction} del {level_name}")
-
-    if sd_zone and breakdown.get("sd_pts", 0) > 0:
-        sd_top = _fmt_price(sd_zone.get("top"))
-        sd_bot = _fmt_price(sd_zone.get("bottom"))
-        sd_type = "Demand" if sd_zone.get("direction") == "bull" else "Supply"
-        out_lines.append(f"✅ Zona {sd_type} activa {sd_bot} - {sd_top}")
-
-    # Filtro externo DXI/VIX con confirmacion/contradiccion
-    filter_confirms = result.get("filter_confirms")
-    filter_label    = breakdown.get("filter_label", "")
-    if filter_label:
-        if filter_confirms is True:
-            out_lines.append(f"✅ {filter_label}")
-        elif filter_confirms is False:
-            out_lines.append(f"❌ {filter_label}")
-        else:
-            out_lines.append(f"◻️ {filter_label}")
-
-    if patterns and breakdown.get("pattern_pts", 0) > 0:
-        out_lines.append(f"✅ {pat_name} en {pat_estado} - precio pivote {level_px}")
-        if rsi_val and rsi_prev:
-            out_lines.append(f"   (RSI segundo suelo {rsi_val:.0f} > RSI primer suelo {rsi_prev:.0f} ✓)")
-
-    for sn in session_names:
-        out_lines.append(f"✅ Ventana {sn} activa")
-
-    # ── Sesión asiática / europea: ¿tocó máximo o mínimo? ──
-    asia_high  = result.get("asia_high")
-    asia_low   = result.get("asia_low")
-    europe_high = result.get("europe_high")
-    europe_low  = result.get("europe_low")
-    if asia_high and price_now >= asia_high * 0.998:
-        out_lines.append(f"✅ Tocó máximo sesión asiática ({_fmt_price(asia_high)})")
-    if asia_low and price_now <= asia_low * 1.002:
-        out_lines.append(f"✅ Tocó mínimo sesión asiática ({_fmt_price(asia_low)})")
-    if europe_high and price_now >= europe_high * 0.998:
-        out_lines.append(f"✅ Tocó máximo sesión europea ({_fmt_price(europe_high)})")
-    if europe_low and price_now <= europe_low * 1.002:
-        out_lines.append(f"✅ Tocó mínimo sesión europea ({_fmt_price(europe_low)})")
-
-    # Lista de lo que falta
-    missing = []
-    if breakdown.get("div_pts", 0) < 4:
-        missing.append("N3 no activo")
-    has_pdh_pdl = False
-    lvl = result.get("levels", {})
-    if isinstance(lvl, dict):
-        for k in lvl:
-            if str(k).startswith("PD") or str(k).startswith("pd"):
-                has_pdh_pdl = True
-    if not has_pdh_pdl:
-        missing.append("PDH/PDL no barrido")
-    for m in missing:
-        out_lines.append(f"◻️ {m}")
-
-    # Barra visual
-    filled = min(puntos, 18)
-    bar = "█" * filled + "░" * (18 - filled)
-
-    out_lines += [
-        "",
-        f"⚡ Puntuacion: {puntos}/18 pts",
-        f"{bar} {puntos}/18",
-        "",
-    ]
-
-    # Referencias del dia (HOD/LOD)
-    if result.get("hod") or result.get("lod"):
-        ref_parts = []
-        if result.get("hod"):
-            ref_parts.append(f"HOD: {_fmt_price(result['hod'])}")
-        if result.get("lod"):
-            ref_parts.append(f"LOD: {_fmt_price(result['lod'])}")
-        out_lines.append(f"\ud83d\udcca Referencias del dia: {'  |  '.join(ref_parts)}")
-        out_lines.append("")
-
-    # SL/TP
-    if sl and tp:
-        sl_str = _fmt_price(sl)
-        tp_str = _fmt_price(tp)
-        ratio = round(abs(tp - price_now) / abs(price_now - sl), 1) if price_now and sl != price_now else "?"
-        out_lines.append(f"SL sugerido: {sl_str} (bajo el minimo del estiron)")
-        out_lines.append(f"TP sugerido: {tp_str} ({level_name} / ratio 1:{ratio})")
-        out_lines.append("")
-
-    # Footer
-    out_lines += [
-        "─" * 20,
-        "Analisis tecnico automatizado",
-        "No es asesoria financiera",
-    ]
-
-    # Enlace TradingView
-    tv = _tv_link(ticker, "es")
-    if tv:
-        out_lines.append("")
-        out_lines.append(tv)
-
-    return "\n".join(out_lines)
-
-async def notify_setup_alerts(setups_by_ticker: dict) -> None:
-    """
-    Envía alertas de setup (≥9 pts) a usuarios con Telegram configurado.
-    setups_by_ticker: {ticker -> resultado de evaluate_setup}
-    Subs básicas (sin prefs): solo reciben nivel "high" y "urgent".
-    """
-    if not setups_by_ticker:
-        return
-
-    now_str = datetime.now(ZoneInfo("Europe/Madrid")).strftime("%A %d/%m/%Y %H:%M")
-
-    all_prefs, basic_chat_ids = await asyncio.gather(
-        get_all_user_prefs(),
-        get_chat_ids(),
-    )
-
-    covered_chat_ids: set = set()
-
-    # 1 — Usuarios con preferencias configuradas
-    if all_prefs:
-        for prefs in all_prefs:
-            user_tickers = [t.upper() for t in (prefs.get("tickers") or [])]
-            chat_id = prefs.get("telegram_chat_id")
-            tg_enabled = prefs.get("telegram_enabled", False)
-
-            if not chat_id or not tg_enabled:
-                continue
-
-            cid_int = int(chat_id)
-            covered_chat_ids.add(cid_int)
-
-            for tkr, result in setups_by_ticker.items():
-                if user_tickers and tkr.upper() not in user_tickers:
-                    continue
-                msg = _build_setup_tg_msg(tkr, result, now_str)
-                if TELEGRAM_TOKEN:
-                    await send_telegram_to(cid_int, msg)
-                    await asyncio.sleep(0.3)
-
-    # 2 — Subs básicas (sin prefs): solo high y urgent
-    if TELEGRAM_TOKEN and basic_chat_ids:
-        urgent_setups = {
-            t: r for t, r in setups_by_ticker.items()
-            if r.get("nivel_alerta") in ("high", "urgent")
-        }
-        if urgent_setups:
-            for cid in basic_chat_ids:
-                cid_int = int(cid)
-                if cid_int in covered_chat_ids:
-                    continue
-                for tkr, result in urgent_setups.items():
-                    msg = _build_setup_tg_msg(tkr, result, now_str)
-                    await send_telegram_to(cid_int, msg)
-                    await asyncio.sleep(0.3)
-
-    total = sum(1 for r in setups_by_ticker.values() if r.get("nivel_alerta") != "save")
-    print(f"[notifier] Setup alerts enviados — {total} setup(s) en {len(setups_by_ticker)} ticker(s)")
+# (Setup Engine, notify_setup_alerts — ELIMINADOS, código legacy)
 
 
 # ── Compatibilidad con scheduler existente ───────────────────
