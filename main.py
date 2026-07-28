@@ -105,6 +105,25 @@ WATCH_TICKERS = [
 _sent_cache: dict = {}
 _DEDUP_SECONDS = 4 * 3600  # 4 horas máximo para alertas recientes
 
+
+def _candle_alert_key(ticker: str, candle_ts) -> str:
+    """Clave única compartida por todas las rutas de alerta."""
+    try:
+        ts = pd.Timestamp(candle_ts)
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+        return f"VELA_{ticker.upper()}_{ts.isoformat()}"
+    except Exception:
+        return f"VELA_{ticker.upper()}_{candle_ts}"
+
+
+def _claim_candle_alert(ticker: str, candle_ts) -> bool:
+    """Reserva una vela para el primer mensaje; impide duplicados entre emisores."""
+    key = _candle_alert_key(ticker, candle_ts)
+    if key in _sent_cache:
+        return False
+    _sent_cache[key] = time.time()
+    return True
+
 _div_cache: dict = {}
 _DIV_DEDUP_SECONDS = 7 * 24 * 3600
 
@@ -1047,8 +1066,7 @@ async def _check_one_ticker(t: str, num_candles: int, label: str, max_per_ticker
             )
 
             if resultado and resultado.get("alert"):
-                vela_key = f"VELA_{t}_{ts_utc_iso}"
-                if vela_key not in _sent_cache:
+                if _claim_candle_alert(t, ts_utc):
                     nuevas.append({
                         "nivel":          resultado["nivel"],
                         "msg":            f"[{t.upper()}] {resultado['estado']} {hora}".strip(),
@@ -1056,7 +1074,6 @@ async def _check_one_ticker(t: str, num_candles: int, label: str, max_per_ticker
                         "dia_num":        dia_num, "dia_name": dia_name,
                         "resultado":      resultado, "components_ctx": components_ctx,
                     })
-                    _sent_cache[vela_key] = now
         if max_per_ticker > 0:
             nuevas = nuevas[:max_per_ticker]
         if nuevas:
@@ -1174,6 +1191,10 @@ async def _check_divergences() -> dict:
                     continue
                 cache_key = f"{t}_{dv['type']}_{dv['level']}_{dv['time']}"
                 if now - _div_cache.get(cache_key, 0) > _DIV_DEDUP_SECONDS:
+                    # Una sola alerta total por activo y vela, aunque también
+                    # exista una alerta de confluencias o RSI en esa vela.
+                    if not _claim_candle_alert(t, dv.get("time")):
+                        continue
                     _div_cache[cache_key] = now
                     asyncio.create_task(
                         _persist_div_alert(cache_key, t, dv["type"], dv["level"], str(dv["time"]))
@@ -1501,15 +1522,12 @@ async def _rsi_realtime_check():
             if not triggered:
                 continue
 
-            dedup_key = f"RSI_RT_{ticker}_{direction}"
-            if now - _sent_cache.get(dedup_key, 0) < _DEDUP_SECONDS:
-                continue
-
             cfg = info["cfg"]
 
             df_rb, _ = await async_download_rb(ticker)
             if df_rb.empty:
                 continue
+            candle_ts = df_rb.index[-1]
             df_rb = calc_indicators(df_rb, cfg["ema_short"], cfg["ema_long"])
             opens_data = calc_opens(df_rb)
 
@@ -1545,6 +1563,8 @@ async def _rsi_realtime_check():
             resultado["rsi_realtime"] = True
 
             if resultado["alert"]:
+                if not _claim_candle_alert(ticker, candle_ts):
+                    continue
                 ts_now = pd.Timestamp.now(tz="UTC")
                 alertas_rsi[ticker] = [{
                     "nivel": direction,
@@ -1556,7 +1576,6 @@ async def _rsi_realtime_check():
                     "resultado": resultado,
                     "components_ctx": components_ctx,
                 }]
-                _sent_cache[dedup_key] = now
                 del _rsi_watchlist[ticker]
                 print(f"[rsi-watch] ⚡ {ticker} RSI={rsi_now:.1f} zona extrema + {puntos}pts → ALERTA INMEDIATA")
 

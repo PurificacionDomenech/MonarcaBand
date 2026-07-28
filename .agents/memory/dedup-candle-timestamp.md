@@ -10,4 +10,4 @@ description: Prevent re-alerting on same candle with different rounding
 - Freshness filter: 90 minutes (covers 3 x 1H candles between scheduler runs)
 - `_sent_cache` stores timestamp, checked with `if vela_key not in _sent_cache`
 
-**How to apply:** In `_check_tickers`, always use the exact candle's `ts_utc_iso` as dedup key, never price-based keys.
+**How to apply:** Every alert producer (normal confluences, RSI real-time, and divergence alerts) must claim the shared `ticker + exact UTC candle timestamp` key before sending; never use price, status, direction, or current wall-clock time as the primary dedup key.
