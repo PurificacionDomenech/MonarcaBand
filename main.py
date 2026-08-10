@@ -698,13 +698,8 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         raw.append({"id": 3, "ok": False,
             "texto": "Sin zonas Supply/Demand activas", "tipo": "info"})
 
-    # ④ Patrones M/W/HCH — ELIMINADOS del scoring.
-    # Los patrones crean contradicciones falsas con la estrategia de
-    # liquidez + divergencias + Supply/Demand. Se mantienen en chart visual pero
-    # NO puntúan ni determinan dirección en confluencias.
+    # Patrones M/W/HCH no forman parte del scoring ni de las confluencias.
     pattern_data = None
-    raw.append({"id": 4, "ok": False,
-        "texto": "Patrones desactivados del scoring", "tipo": "info"})
 
     # ④ Soporte / Resistencia — techos y suelos: día actual (+1), día anterior (+1), semana (+1)
     try:
