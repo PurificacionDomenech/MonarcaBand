@@ -162,16 +162,16 @@ def _format_hora_tz(ts_utc_iso: str, tz_str: str) -> tuple[str, str, str]:
 
 def _rsi_ctx(rsi: float, lang: str) -> str:
     if lang == "en":
-        if rsi > 70:   return "overbought"
-        if rsi < 30:   return "oversold"
-        if rsi > 60:   return "approaching overbought"
-        if rsi < 40:   return "approaching oversold"
+        if rsi > 66:   return "overbought"
+        if rsi < 33:   return "oversold"
+        if rsi > 66:   return "approaching overbought"
+        if rsi < 33:   return "approaching oversold"
         return "neutral"
     else:
-        if rsi > 70:   return "sobrecompra"
-        if rsi < 30:   return "sobreventa"
-        if rsi > 60:   return "zona alta"
-        if rsi < 40:   return "zona baja"
+        if rsi > 66:   return "sobrecompra"
+        if rsi < 33:   return "sobreventa"
+        if rsi > 66:   return "zona alta"
+        if rsi < 33:   return "zona baja"
         return "zona neutra"
 
 def _signal_lines(a: dict, lang: str) -> list[str]:

@@ -25,6 +25,8 @@ try:
         detect_all_divergences as _detect_all_divergences,
         calc_rsi as _calc_rsi,
         build_rsi_div_segments as _build_rsi_div_segs,
+        RSI_LOW_EXTREME as _RSI_LOW_EXTREME,
+        RSI_HIGH_EXTREME as _RSI_HIGH_EXTREME,
     )
     HAS_TB = True
 except Exception as _tb_err:
@@ -41,6 +43,8 @@ except Exception as _tb_err:
     _detect_all_divergences = None
     _calc_rsi = None
     _build_rsi_div_segs = None
+    _RSI_LOW_EXTREME = 33.0
+    _RSI_HIGH_EXTREME = 66.0
     print(f"[WARN] trading_band_routes no disponible: {_tb_err}")
 
 try:
@@ -547,25 +551,25 @@ def detect_alerts(df, ticker="", ema_short=200, ema_long=800, cfg=None):
         if pd.notna(r):
             rsi_val = float(r)
 
-    # ── RSI extremo (≤30 o ≥70) ──────────────────────────────
+    # ── RSI extremo estricto (<33 o >66) ──────────────────────
     if rsi_val is not None:
-        if rsi_val <= 30:
+        if rsi_val < _RSI_LOW_EXTREME:
             alertas.append({
                 "nivel": "bullish",
                 "tipo": "rsi_extreme",
                 "close": pn,
                 "rsi": rsi_val,
                 "pts": 2,
-                "msg": prefix + f"RSI {rsi_val:.1f} ≤ 30 — zona de sobreventa",
+                "msg": prefix + f"RSI {rsi_val:.1f} < 33 — zona de sobreventa",
             })
-        elif rsi_val >= 70:
+        elif rsi_val > _RSI_HIGH_EXTREME:
             alertas.append({
                 "nivel": "bearish",
                 "tipo": "rsi_extreme",
                 "close": pn,
                 "rsi": rsi_val,
                 "pts": 2,
-                "msg": prefix + f"RSI {rsi_val:.1f} ≥ 70 — zona de sobrecompra",
+                "msg": prefix + f"RSI {rsi_val:.1f} > 66 — zona de sobrecompra",
             })
 
     return alertas
@@ -581,7 +585,7 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     FOCO: RSI, Divergencias, Zonas Supply/Demand, Soportes/Resistencias, Shark Fin.
 
     Direcciones:
-      ① RSI <30 o >70 → extremo (+2)  |  RSI 30-44 / 56-70 → interés (+1)  |  45-55 → neutro
+      ① RSI <33 o >66 → válido (+2); el resto no puntúa
       ② Divergencia RSI activa → bullish/bearish según tipo
       ③ Zona Supply/Demand activa cerca del precio → bullish/bearish según dirección
       ④ HOD/LOD/PDH/PDL → soportes y resistencias (+1 cada uno)
@@ -609,21 +613,13 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
 
     raw = []
 
-    # ① RSI — zona de interés para reversión
-    # <30 o >70: extremo (+2 pts)  |  30-44 / 56-70: zona de interés (+1 pt)
-    # 45-55: tierra de nadie (0 pts)
-    if rsi < 30:
+    # ① RSI — solo los extremos estrictos puntúan
+    if rsi < _RSI_LOW_EXTREME:
         raw.append({"id": 1, "ok": True,
-            "texto": f"⚡ RSI extremo {rsi:.1f} (<30) → sobreventa máxima", "tipo": "bullish", "pts": 2})
-    elif rsi < 45:
+            "texto": f"⚡ RSI extremo {rsi:.1f} (<33) → sobreventa", "tipo": "bullish", "pts": 2})
+    elif rsi > _RSI_HIGH_EXTREME:
         raw.append({"id": 1, "ok": True,
-            "texto": f"RSI bajo ({rsi:.1f}) → favorable para largos", "tipo": "bullish", "pts": 1})
-    elif rsi > 70:
-        raw.append({"id": 1, "ok": True,
-            "texto": f"⚡ RSI extremo {rsi:.1f} (>70) → sobrecompra máxima", "tipo": "bearish", "pts": 2})
-    elif rsi > 55:
-        raw.append({"id": 1, "ok": True,
-            "texto": f"RSI alto ({rsi:.1f}) → favorable para cortos", "tipo": "bearish", "pts": 1})
+            "texto": f"⚡ RSI extremo {rsi:.1f} (>66) → sobrecompra", "tipo": "bearish", "pts": 2})
     else:
         raw.append({"id": 1, "ok": False,
             "texto": f"RSI neutro ({rsi:.1f})", "tipo": "info", "pts": 0})
@@ -636,23 +632,28 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         all_divs = _detect_divs(df, rsi_series)
         recent_divs = [d for d in all_divs if d.get("bar", 0) >= len(df) - 60]
 
-        # Filtrar: solo divergencias alineadas con el RSI actual
-        # RSI < 40 → solo alcistas | RSI > 60 → solo bajistas
+        # Si el RSI actual está en extremo, priorizar divergencias del mismo
+        # lado. Si está neutro, las divergencias siguen siendo válidas por sus
+        # propios extremos (uno o ambos pivotes).
         if recent_divs:
-            if rsi < 40:
+            if rsi < _RSI_LOW_EXTREME:
                 recent_divs = [d for d in recent_divs if d["type"] in ("bull", "hbull")]
-            elif rsi > 60:
+            elif rsi > _RSI_HIGH_EXTREME:
                 recent_divs = [d for d in recent_divs if d["type"] in ("bear", "hbear")]
 
         if recent_divs:
             # Puntos = nivel máximo de divergencia: N1=1, N2=2, N3=3
             best = max(recent_divs, key=lambda d: d.get("level", 1))
-            div_pts = best.get("level", 1)
+            div_pts = best.get("level", 1) + (1 if best.get("extreme_both") else 0)
             div_type = best["type"]
             div_dir = "bullish" if div_type in ("bull", "hbull") else "bearish" if div_type in ("bear", "hbear") else "info"
             div_data = best
             raw.append({"id": 2, "ok": True,
-                "texto": f"Divergencia RSI {div_type.upper()} N{best.get('level',1)} (RSI {best.get('rsi',0):.1f})",
+                "texto": (
+                    f"Divergencia RSI {div_type.upper()} N{best.get('level',1)} "
+                    f"({'ambos extremos' if best.get('extreme_both') else 'un extremo válido'}: "
+                    f"RSI {best.get('rsi',0):.1f}/{best.get('rsi_prev',0):.1f})"
+                ),
                 "tipo": div_dir, "pts": div_pts})
     if not div_data:
         raw.append({"id": 2, "ok": False,
@@ -786,13 +787,13 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         elif shark["phase"] == "crossed":
             raw.append({"id": 7, "ok": True,
                 "texto": (f"Aleta tiburón bajista — RSI pico {shark['shark_rsi_peak']:.1f} "
-                          f"cruzó <70 confirmado"),
+                          f"cruzó <66 confirmado"),
                 "tipo": "bearish",
                 "pts_extra": pts_shark,
                 "alert_immediate": True})
         elif shark["phase"] == "forming":
             raw.append({"id": 7, "ok": False,
-                "texto": (f"Aleta tiburón formándose — RSI en zona >70 "
+                "texto": (f"Aleta tiburón formándose — RSI en zona >66 "
                           f"({shark['shark_rsi_peak']:.1f}), esperando cruce"),
                 "tipo": "info",
                 "pts_extra": 0,
@@ -813,13 +814,13 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         elif shark["phase"] == "crossed":
             raw.append({"id": 7, "ok": True,
                 "texto": (f"Aleta tiburón alcista — RSI valle {shark['shark_rsi_peak']:.1f} "
-                          f"cruzó >30 confirmado"),
+                          f"cruzó >33 confirmado"),
                 "tipo": "bullish",
                 "pts_extra": pts_shark,
                 "alert_immediate": True})
         elif shark["phase"] == "forming":
             raw.append({"id": 7, "ok": False,
-                "texto": (f"Aleta tiburón formándose — RSI en zona <30 "
+                "texto": (f"Aleta tiburón formándose — RSI en zona <33 "
                           f"({shark['shark_rsi_peak']:.1f}), esperando cruce"),
                 "tipo": "info",
                 "pts_extra": 0,
@@ -1442,8 +1443,8 @@ async def _update_rsi_watchlist():
                 if c.get("ok") and not c.get("descartada") and not c.get("conflicto"):
                     puntos_sin_rsi += c.get("pts", 1)
 
-            rsi_ya_extremo = (direction == "bullish" and rsi <= 30) or \
-                             (direction == "bearish" and rsi >= 70)
+            rsi_ya_extremo = (direction == "bullish" and rsi < _RSI_LOW_EXTREME) or \
+                             (direction == "bearish" and rsi > _RSI_HIGH_EXTREME)
 
             if puntos_sin_rsi >= 5 and not rsi_ya_extremo:
                 new_watchlist[t.upper()] = {
@@ -1469,7 +1470,7 @@ async def _update_rsi_watchlist():
 
 async def _rsi_realtime_check():
     """Cada 2 min revisa SOLO el RSI de los activos en la watchlist.
-    Si el RSI cruza la zona extrema (≤30 largos, ≥70 cortos) → alerta inmediata."""
+    Si el RSI cruza la zona extrema (<33 largos, >66 cortos) → alerta inmediata."""
     if not HAS_NOTIFIER or not _rsi_watchlist:
         return
 
@@ -1511,8 +1512,8 @@ async def _rsi_realtime_check():
             rsi_now = float(rsi_series.iloc[-1])
 
             direction = info["direction"]
-            triggered = (direction == "bullish" and rsi_now <= 30) or \
-                        (direction == "bearish" and rsi_now >= 70)
+            triggered = (direction == "bullish" and rsi_now < _RSI_LOW_EXTREME) or \
+                        (direction == "bearish" and rsi_now > _RSI_HIGH_EXTREME)
 
             if not triggered:
                 continue
@@ -1536,13 +1537,13 @@ async def _rsi_realtime_check():
             resultado["rsi"] = rsi_now
             for c in resultado.get("confluencias", []):
                 if c["id"] == 1:
-                    if direction == "bullish" and rsi_now <= 30:
+                    if direction == "bullish" and rsi_now < _RSI_LOW_EXTREME:
                         c["ok"] = True
                         c["tipo"] = "bullish"
                         c["texto"] = f"⚡ RSI en zona de compra ({rsi_now:.1f}) → COMPRA"
                         c.pop("descartada", None)
                         c.pop("conflicto", None)
-                    elif direction == "bearish" and rsi_now >= 70:
+                    elif direction == "bearish" and rsi_now > _RSI_HIGH_EXTREME:
                         c["ok"] = True
                         c["tipo"] = "bearish"
                         c["texto"] = f"⚡ RSI en zona de venta ({rsi_now:.1f}) → VENTA"
@@ -1936,9 +1937,9 @@ async def get_chart(ticker: str):
         for i in range(len(df)):
             r = df["RSI"].iloc[i]
             if pd.notna(r):
-                if r < 30:
+                if r < _RSI_LOW_EXTREME:
                     ros.append({"x": ts[i], "y": float(df["Close"].iloc[i])})
-                elif r > 70:
+                elif r > _RSI_HIGH_EXTREME:
                     rob.append({"x": ts[i], "y": float(df["Close"].iloc[i])})
 
         crosses = []

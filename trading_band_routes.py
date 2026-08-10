@@ -57,6 +57,24 @@ def calc_rsi(s: pd.Series, p: int = 14) -> pd.Series:
     rs = avg_gain / avg_loss.replace(0, np.nan)
     return (100 - 100 / (1 + rs)).fillna(50.0)
 
+
+# Umbrales estrictos de extremos usados por RSI, divergencias y Shark Fin.
+# 33/66 exactos no cuentan: debe estar por debajo de 33 o por encima de 66.
+RSI_LOW_EXTREME = 33.0
+RSI_HIGH_EXTREME = 66.0
+
+
+def _bullish_rsi_extremes(rsi_cur: float, rsi_prev: float) -> tuple[bool, int]:
+    """Devuelve (válida, número de extremos) para una divergencia alcista."""
+    count = int(rsi_cur < RSI_LOW_EXTREME) + int(rsi_prev < RSI_LOW_EXTREME)
+    return count >= 1, count
+
+
+def _bearish_rsi_extremes(rsi_cur: float, rsi_prev: float) -> tuple[bool, int]:
+    """Devuelve (válida, número de extremos) para una divergencia bajista."""
+    count = int(rsi_cur > RSI_HIGH_EXTREME) + int(rsi_prev > RSI_HIGH_EXTREME)
+    return count >= 1, count
+
 def calc_trading_band(close: pd.Series, tp: int = 12, ap: int = 12):
     trigger = sma(close, tp)
     average = sma(trigger, ap)
@@ -196,26 +214,29 @@ def detect_divergences_level(
             prev_bar, prev_rsi, prev_price = prev_pl
             bars_between = pivot_bar - prev_bar
             if _in_range(bars_between, rn_min, rn_max):
-                # Divergencias REGULARES (reversal): requieren RSI en zona extrema
-                # bull:  precio lower low + RSI higher low  →  RSI pivote < 35 (sobreventa)
-                if price_cur < prev_price and rsi_cur > prev_rsi and rsi_cur < 35:
+                # Toda divergencia necesita al menos un extremo RSI válido.
+                # Si ambos extremos cumplen, queda marcada como confirmación fuerte.
+                bull_valid, bull_extremes = _bullish_rsi_extremes(rsi_cur, prev_rsi)
+                # bull: precio lower low + RSI higher low
+                if price_cur < prev_price and rsi_cur > prev_rsi and bull_valid:
                     divs.append({"type": "bull", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
                         "time": times[pivot_bar].isoformat(),
                         "time_prev": times[prev_bar].isoformat(),
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
-                        "in_zone": True})
-                # Divergencias OCULTAS (continuación): NO requieren zona extrema
-                # hbull: precio higher low + RSI lower low  →  continuación alcista
-                elif price_cur > prev_price and rsi_cur < prev_rsi:
+                        "in_zone": True, "extreme_count": bull_extremes,
+                        "extreme_both": bull_extremes == 2})
+                # hbull: precio higher low + RSI lower low
+                elif price_cur > prev_price and rsi_cur < prev_rsi and bull_valid:
                     divs.append({"type": "hbull", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
                         "time": times[pivot_bar].isoformat(),
                         "time_prev": times[prev_bar].isoformat(),
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
-                        "in_zone": rsi_cur < 40})
+                        "in_zone": True, "extreme_count": bull_extremes,
+                        "extreme_both": bull_extremes == 2})
         prev_pl = (pivot_bar, rsi_cur, price_cur)
 
     prev_ph = None
@@ -231,26 +252,28 @@ def detect_divergences_level(
             prev_bar, prev_rsi, prev_price = prev_ph
             bars_between = pivot_bar - prev_bar
             if _in_range(bars_between, rn_min, rn_max):
-                # Divergencias REGULARES (reversal): requieren RSI en zona extrema
-                # bear:  precio higher high + RSI lower high  →  RSI pivote > 65 (sobrecompra)
-                if price_cur > prev_price and rsi_cur < prev_rsi and rsi_cur > 65:
+                # Toda divergencia necesita al menos un extremo RSI válido.
+                # bear: precio higher high + RSI lower high
+                bear_valid, bear_extremes = _bearish_rsi_extremes(rsi_cur, prev_rsi)
+                if price_cur > prev_price and rsi_cur < prev_rsi and bear_valid:
                     divs.append({"type": "bear", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
                         "time": times[pivot_bar].isoformat(),
                         "time_prev": times[prev_bar].isoformat(),
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
-                        "in_zone": True})
-                # Divergencias OCULTAS (continuación): NO requieren zona extrema
-                # hbear: precio lower high + RSI higher high  →  continuación bajista
-                elif price_cur < prev_price and rsi_cur > prev_rsi:
+                        "in_zone": True, "extreme_count": bear_extremes,
+                        "extreme_both": bear_extremes == 2})
+                # hbear: precio lower high + RSI higher high
+                elif price_cur < prev_price and rsi_cur > prev_rsi and bear_valid:
                     divs.append({"type": "hbear", "level": level,
                         "bar": pivot_bar, "bar_prev": prev_bar,
                         "time": times[pivot_bar].isoformat(),
                         "time_prev": times[prev_bar].isoformat(),
                         "rsi": round(rsi_cur, 2), "rsi_prev": round(prev_rsi, 2),
                         "price": round(price_cur, 4), "price_prev": round(prev_price, 4),
-                        "in_zone": rsi_cur > 60})
+                        "in_zone": True, "extreme_count": bear_extremes,
+                        "extreme_both": bear_extremes == 2})
         prev_ph = (pivot_bar, rsi_cur, price_cur)
 
     return divs
@@ -350,8 +373,8 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
     Requiere divergencia previa confirmada.
 
     Casos:
-      shark_bear: precio HH + RSI LH (div bajista) → RSI entra >70 y forma pico → cruza <70
-      shark_bull: precio LL + RSI HL (div alcista) → RSI entra <30 y forma valle → cruza >30
+      shark_bear: precio HH + RSI LH (div bajista) → RSI entra >66 y forma pico → cruza <66
+      shark_bull: precio LL + RSI HL (div alcista) → RSI entra <33 y forma valle → cruza >33
 
     shark_exceeds_div: el pico/valle de la aleta supera el nivel del pivote R1/S1 original
     → puntuación x2 + alerta instantánea al detectar (sin esperar el cruce)
@@ -393,19 +416,19 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
         r1_rsi     = bear_line["rsi1"]   # RSI del pivote más antiguo (más alto)
         r2_rsi     = bear_line["rsi0"]   # RSI del pivote más reciente (más bajo = LH)
 
-        # Buscar si después de R2 el RSI ha entrado en zona >70
+        # Buscar si después de R2 el RSI ha entrado por encima de 66
         n = len(rsi)
         recent = rsi.iloc[-min(lookback, n):]
 
         # Encontrar picos locales en el RSI reciente
-        # Umbral: pico debe entrar en zona extrema >70 (agotamiento alcista / reversal bajista)
-        thresh_peak = 70.0
+        # El pico debe superar 66; picos inferiores no son señales válidas.
+        thresh_peak = RSI_HIGH_EXTREME
         shark_peaks = []
         for i in range(1, len(recent) - 1):
             v  = float(recent.iloc[i])
             vp = float(recent.iloc[i - 1])
             vn = float(recent.iloc[i + 1])
-            if v >= thresh_peak and v >= vp and v >= vn:
+            if v > thresh_peak and v >= vp and v >= vn:
                 shark_peaks.append((i, v))
 
         if shark_peaks:
@@ -452,7 +475,7 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
             v  = float(recent.iloc[i])
             vp = float(recent.iloc[i - 1])
             vn = float(recent.iloc[i + 1])
-            if v < 30 and v <= vp and v <= vn:
+            if v < RSI_LOW_EXTREME and v <= vp and v <= vn:
                 shark_valleys.append((i, v))
 
         if shark_valleys:
@@ -471,7 +494,7 @@ def calc_shark_fin(df: pd.DataFrame, lookback: int = 30) -> dict:
                 result["phase"]          = "exceeded"
                 result["alert_immediate"] = True
                 result["shark_pts"]       = 4
-            elif rsi_now > 30 and valley_i < len(recent) - 1:
+            elif rsi_now > RSI_LOW_EXTREME and valley_i < len(recent) - 1:
                 result["phase"]          = "crossed"
                 result["alert_immediate"] = True
                 result["shark_pts"]       = 2
@@ -578,7 +601,7 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
             v = _safe(rsi_s.iloc[i])
             if v is None:
                 continue
-            zone = "ob" if v >= 70 else ("os" if v <= 30 else "neutral")
+            zone = "ob" if v > RSI_HIGH_EXTREME else ("os" if v < RSI_LOW_EXTREME else "neutral")
             rsi_points.append({"x": timestamps[i], "y": v, "zone": zone})
 
         # ── Señales recientes
@@ -594,14 +617,14 @@ async def get_tb_signal(ticker: str, use_range_bars: bool = True):
                 recent_signals.append({"type": "tb_down", "x": t, "price": c_val,
                     "label": "▼ TradingBand BAJISTA"})
             rv = _safe(rsi_s.iloc[i])
-            if rv and rsi_s.iloc[i] <= 30 and (i == 0 or rsi_s.iloc[i - 1] > 30):
+            if rv and rsi_s.iloc[i] < RSI_LOW_EXTREME and (i == 0 or rsi_s.iloc[i - 1] >= RSI_LOW_EXTREME):
                 recent_signals.append({"type": "rsi_os", "x": t, "price": c_val, "rsi": rv,
-                    "label": "● RSI Sobreventa ≤30"})
-            if rv and rsi_s.iloc[i] >= 70 and (i == 0 or rsi_s.iloc[i - 1] < 70):
+                    "label": "● RSI Sobreventa <33"})
+            if rv and rsi_s.iloc[i] > RSI_HIGH_EXTREME and (i == 0 or rsi_s.iloc[i - 1] <= RSI_HIGH_EXTREME):
                 recent_signals.append({"type": "rsi_ob", "x": t, "price": c_val, "rsi": rv,
-                    "label": "● RSI Sobrecompra ≥70"})
+                    "label": "● RSI Sobrecompra >66"})
 
-        # Divergencias en zonas clave (RSI ≤30 alcistas, ≥70 bajistas)
+        # Divergencias en zonas clave (al menos un extremo <33 o >66)
         zone_divs = [d for d in all_divs if d.get("in_zone", False)]
 
         recent_signals.sort(key=lambda x: x["x"], reverse=True)
