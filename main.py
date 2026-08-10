@@ -665,14 +665,20 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
     if _detect_sd is not None:
         sd = _detect_sd(df, lookback=10, max_zonas=30)
         zones = sd.get("zones", [])
-        # Zona más cercana al precio actual que esté activa (touched)
-        active_zones = [z for z in zones if z.get("touched")]
-        active_zones.sort(key=lambda z: abs(price - (z["top"]+z["bottom"])/2))
+        # "touched" significa que la zona fue visitada alguna vez en el
+        # histórico. Para puntuarla ahora debe tocarla la vela evaluada:
+        # las zonas lejanas no son una confluencia actual.
+        current_zones = [
+            z for z in zones
+            if bar_high is not None and bar_low is not None
+            and bar_low <= z["top"] and bar_high >= z["bottom"]
+        ]
+        current_zones.sort(key=lambda z: abs(price - (z["top"] + z["bottom"]) / 2))
 
-        for zone in active_zones:
+        for zone in current_zones:
             zone_dir = "bullish" if zone["direction"] == "bull" else "bearish"
             zone_type = "Demand" if zone["direction"] == "bull" else "Supply"
-            zone_text = (f"Zona {zone_type} activa {zone['bottom']:.2f}–{zone['top']:.2f}")
+            zone_text = (f"Zona {zone_type} tocada ahora {zone['bottom']:.2f}–{zone['top']:.2f}")
             sd_data = zone
             raw.append({"id": 3, "ok": True, "texto": zone_text, "tipo": zone_dir, "pts": 2})
             break
@@ -961,7 +967,10 @@ def evaluate_confluencias(df, ticker="", cfg=None, opens=None, components_ctx=No
         nivel  = "info"
         alert  = False
 
-    max_confs = max(c["id"] for c in confluencias_final) if confluencias_final else 5
+    # Los puntos tienen pesos distintos (N1/N2/N3, Shark Fin, zonas), por
+    # lo que no deben presentarse como "puntos / número de criterio".
+    # El notifier muestra ahora solo la puntuación total.
+    max_confs = None
 
     return {
         "ticker":        ticker.upper(),

@@ -736,14 +736,13 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
                   "Thursday":"Jueves","Friday":"Viernes","Saturday":"Sábado","Sunday":"Domingo"}
     dia_label = dia_map_es.get(dia_display, dia_display) if lang == "es" else dia_display
 
-    max_confs = resultado.get("max_confs", 5)
     if lang == "en":
-        conf_label = f"{puntos}/{max_confs} confluences"
+        conf_label = f"{puntos} points"
         sec_header = "<b>Active confluences:</b>"
         candle_lbl = "Range bar"
         contr_warn = ("⚠️ <b>CONFLICTING SIGNALS</b> — confluences point in opposite directions.") if contradiccion else ""
     else:
-        conf_label = f"{puntos}/{max_confs} confluencias"
+        conf_label = f"{puntos} puntos"
         sec_header = "<b>Confluencias activas:</b>"
         candle_lbl = "Vela 1H"
         contr_warn = ("⚠️ <b>SEÑALES CONTRADICTORIAS</b> — las confluencias apuntan en direcciones opuestas.") if contradiccion else ""
