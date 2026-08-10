@@ -766,7 +766,14 @@ def _build_confluencia_msg(resultado: dict, hora: str, dia_name: str, now_str: s
     if hora_display:
         lines.append(f"🕐 {candle_lbl} · {dia_label} {hora_display} {tz_label}")
 
-    rsi_str = f"RSI {rsi:.1f}" if rsi is not None else "RSI —"
+    if rsi is not None:
+        rsi_str = (
+            f"RSI en tiempo real {rsi:.1f}"
+            if is_rsi_rt
+            else f"RSI de la vela {rsi:.1f}"
+        )
+    else:
+        rsi_str = "RSI —"
     estado_line = f"{estado_emoji} <b>{estado}</b>  ·  {rsi_str}  ·  {conf_label}"
     lines.append(estado_line)
 
